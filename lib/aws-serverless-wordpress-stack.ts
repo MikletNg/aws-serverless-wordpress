@@ -267,6 +267,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             internetFacing: true,
             securityGroup: applicationLoadBalancerSecurityGroup
         });
+        applicationLoadBalancer.setAttribute('routing.http.drop_invalid_header_fields.enabled','true')
         applicationLoadBalancer.logAccessLogs(loggingBucket, 'application-load-balancer')
 
         const httpListener = applicationLoadBalancer.addListener('HttpsListener', {
@@ -673,7 +674,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             new ManagedRule(this, 'AwsConfigManagedRuleAutoScalingGroupElbHealthcheckRequired', {identifier: 'AUTOSCALING_GROUP_ELB_HEALTHCHECK_REQUIRED'}),
             new ManagedRule(this, 'AwsConfigManagedRuleIncomingSshDisabled', {identifier: 'INCOMING_SSH_DISABLED'}),
             // new ManagedRule(this, 'AwsConfigManagedRuleSnsEncryptedKms', {identifier: 'SNS_ENCRYPTED_KMS'}),
-            // new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpDropInvalidHeaderEnabled', {identifier: 'ALB_HTTP_DROP_INVALID_HEADER_ENABLED'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpDropInvalidHeaderEnabled', {identifier: 'ALB_HTTP_DROP_INVALID_HEADER_ENABLED'}),
             new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpToHttpsRedirectionCheck', {identifier: 'ALB_HTTP_TO_HTTPS_REDIRECTION_CHECK'}),
             new ManagedRule(this, 'AwsConfigManagedRuleAlbWafEnabled', {
                 identifier: 'ALB_WAF_ENABLED',
