@@ -6,8 +6,10 @@ import {AwsServerlessWordpressStack} from '../lib/aws-serverless-wordpress-stack
 
 const app = new cdk.App();
 const stack = new AwsServerlessWordpressStack(app, 'AwsServerlessWordpressStack', {
+    terminationProtection: true,
+    resourceDeletionProtection: true,
     env: {
-        region: 'ap-southeast-1'
+        region: 'us-east-1',
     },
     databaseCredential: {
         username: 'wordpress-user',
@@ -16,9 +18,7 @@ const stack = new AwsServerlessWordpressStack(app, 'AwsServerlessWordpressStack'
     domainName: 'blog.miklet.pro',
     hostname: 'blog.miklet.pro',
     alternativeHostname: ['*.blog.miklet.pro'],
-    enableDeletionProtection: true,
     removalPolicy: RemovalPolicy.DESTROY,
-    snsEmailSubscription: ['empty@miklet.pro'],
+    snsEmailSubscription: ['mike@miklet.pro'],
 });
-
 Tags.of(stack).add('aws:cloudformation:stack-name', stack.stackName);

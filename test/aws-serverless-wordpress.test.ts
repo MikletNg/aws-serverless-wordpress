@@ -7,8 +7,9 @@ test('Empty Stack', () => {
     const app = new cdk.App();
     // WHEN
     const stack = new AwsServerlessWordpress.AwsServerlessWordpressStack(app, 'MyTestStack', {
+        snsEmailSubscription: ['mike@miklet.pro'],
         env: {
-            region: 'ap-southeast-1'
+            region: 'us-east-1'
         },
         databaseCredential: {
             username: 'wordpress-user',
@@ -17,7 +18,7 @@ test('Empty Stack', () => {
         domainName: 'blog.miklet.pro',
         hostname: 'blog.miklet.pro',
         alternativeHostname: ['*.blog.miklet.pro'],
-        enableDeletionProtection: false,
+        resourceDeletionProtection: false,
         removalPolicy: RemovalPolicy.DESTROY
     });
     // THEN

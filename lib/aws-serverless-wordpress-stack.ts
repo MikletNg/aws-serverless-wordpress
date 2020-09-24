@@ -1,14 +1,26 @@
 import * as cdk from '@aws-cdk/core';
 import {CfnOutput, Duration, RemovalPolicy, SecretValue} from '@aws-cdk/core';
-import {ARecord, CnameRecord, PrivateHostedZone, PublicHostedZone, RecordTarget} from "@aws-cdk/aws-route53";
-import {Certificate, CertificateValidation, DnsValidatedCertificate} from "@aws-cdk/aws-certificatemanager";
-import {Bucket, BucketEncryption, StorageClass} from "@aws-cdk/aws-s3";
-import {CfnWebACL, CfnWebACLAssociation} from "@aws-cdk/aws-wafv2";
-import {CfnFlowLog, Peer, Port, SecurityGroup, SubnetType, Vpc} from "@aws-cdk/aws-ec2";
-import {CfnDBCluster, CfnDBClusterParameterGroup, CfnDBSubnetGroup} from "@aws-cdk/aws-rds";
-import {Secret} from "@aws-cdk/aws-secretsmanager";
-import {CfnCacheCluster, CfnSubnetGroup} from "@aws-cdk/aws-elasticache";
-import {FileSystem, LifecyclePolicy, PerformanceMode, ThroughputMode} from "@aws-cdk/aws-efs";
+import {ARecord, CnameRecord, PrivateHostedZone, PublicHostedZone, RecordTarget} from '@aws-cdk/aws-route53';
+import {Certificate, CertificateValidation} from '@aws-cdk/aws-certificatemanager';
+import {Bucket, BucketEncryption, StorageClass} from '@aws-cdk/aws-s3';
+import {CfnWebACL, CfnWebACLAssociation} from '@aws-cdk/aws-wafv2';
+import {
+    AclCidr,
+    AclTraffic,
+    Action,
+    CfnFlowLog,
+    NetworkAcl,
+    Peer,
+    Port,
+    SecurityGroup,
+    SubnetType,
+    TrafficDirection,
+    Vpc
+} from '@aws-cdk/aws-ec2';
+import {CfnDBCluster, CfnDBClusterParameterGroup, CfnDBSubnetGroup} from '@aws-cdk/aws-rds';
+import {Secret} from '@aws-cdk/aws-secretsmanager';
+import {CfnCacheCluster, CfnSubnetGroup} from '@aws-cdk/aws-elasticache';
+import {FileSystem, LifecyclePolicy, PerformanceMode, ThroughputMode} from '@aws-cdk/aws-efs';
 import {
     CfnCluster,
     CfnService,
@@ -19,17 +31,18 @@ import {
     LogDriver,
     Protocol,
     Secret as EcsSecret
-} from "@aws-cdk/aws-ecs";
+} from '@aws-cdk/aws-ecs';
 import {
     ApplicationLoadBalancer,
     ApplicationProtocol,
     ApplicationTargetGroup,
     CfnListener,
-    CfnTargetGroup
-} from "@aws-cdk/aws-elasticloadbalancingv2";
-import {ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal} from "@aws-cdk/aws-iam";
-import {RetentionDays} from "@aws-cdk/aws-logs";
-import {PredefinedMetric, ScalableTarget, ServiceNamespace} from "@aws-cdk/aws-applicationautoscaling";
+    CfnTargetGroup,
+    ListenerAction
+} from '@aws-cdk/aws-elasticloadbalancingv2';
+import {ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal} from '@aws-cdk/aws-iam';
+import {RetentionDays} from '@aws-cdk/aws-logs';
+import {PredefinedMetric, ScalableTarget, ServiceNamespace} from '@aws-cdk/aws-applicationautoscaling';
 import {
     CloudFrontAllowedCachedMethods,
     CloudFrontAllowedMethods,
@@ -40,28 +53,30 @@ import {
     PriceClass,
     ViewerCertificate,
     ViewerProtocolPolicy
-} from "@aws-cdk/aws-cloudfront";
-import {CloudFrontTarget} from "@aws-cdk/aws-route53-targets";
-import {HttpsRedirect} from "@aws-cdk/aws-route53-patterns";
-import {BackupPlan, BackupResource, BackupVault} from "@aws-cdk/aws-backup";
-import {CloudFormationStackDriftDetectionCheck, ManagedRule} from "@aws-cdk/aws-config";
+} from '@aws-cdk/aws-cloudfront';
+import {CloudFrontTarget} from '@aws-cdk/aws-route53-targets';
+import {HttpsRedirect} from '@aws-cdk/aws-route53-patterns';
+import {BackupPlan, BackupResource, BackupVault} from '@aws-cdk/aws-backup';
+import {CloudFormationStackDriftDetectionCheck, ManagedRule} from '@aws-cdk/aws-config';
 import {Topic} from '@aws-cdk/aws-sns';
 import {EmailSubscription} from '@aws-cdk/aws-sns-subscriptions';
-import {SnsTopic} from "@aws-cdk/aws-events-targets";
+import {SnsTopic} from '@aws-cdk/aws-events-targets';
+import {Alias} from "@aws-cdk/aws-kms";
 
 interface IDatabaseCredential {
     username: string
     defaultDatabaseName: string
 }
 
-interface StackProps extends cdk.StageProps {
+interface StackProps extends cdk.StackProps {
     domainName: string
     hostname: string
     alternativeHostname: string[]
     databaseCredential: IDatabaseCredential
-    enableDeletionProtection: boolean
+    resourceDeletionProtection: boolean
     removalPolicy: RemovalPolicy
     snsEmailSubscription: string[]
+    cloudFrontHashHeader?: string
 }
 
 export class AwsServerlessWordpressStack extends cdk.Stack {
@@ -80,12 +95,12 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             validation: CertificateValidation.fromDns(publicHostedZone)
         });
 
-        const cloudFrontAcmCertificate = new DnsValidatedCertificate(this, 'CloudFrontCertificate', {
-            domainName: props.hostname,
-            subjectAlternativeNames: props.alternativeHostname,
-            hostedZone: publicHostedZone,
-            region: 'us-east-1'
-        });
+        // const acmCertificate = new DnsValidatedCertificate(this, 'Certificate', {
+        //     domainName: props.hostname,
+        //     subjectAlternativeNames: props.alternativeHostname,
+        //     hostedZone: publicHostedZone,
+        //     validation: CertificateValidation.fromDns(publicHostedZone)
+        // });
 
         const staticContentBucket = new Bucket(this, 'StaticContentBucket', {
             encryption: BucketEncryption.S3_MANAGED,
@@ -135,6 +150,36 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             enableDnsSupport: true
         });
 
+        const nacl = new NetworkAcl(this, 'NetworkAcl', {vpc});
+        nacl.addEntry('AllowAllHttpsFromIpv4', {
+            ruleNumber: 100,
+            cidr: AclCidr.anyIpv4(),
+            traffic: AclTraffic.tcpPort(443),
+            direction: TrafficDirection.INGRESS,
+            ruleAction: Action.ALLOW
+        });
+        nacl.addEntry('AllowAllHttpsFromIpv6', {
+            ruleNumber: 101,
+            cidr: AclCidr.anyIpv6(),
+            traffic: AclTraffic.tcpPort(443),
+            direction: TrafficDirection.INGRESS,
+            ruleAction: Action.ALLOW
+        });
+        nacl.addEntry('AllowResponseToHttpsRequestToIpv4', {
+            ruleNumber: 100,
+            cidr: AclCidr.anyIpv4(),
+            traffic: AclTraffic.tcpPortRange(1024,65535),
+            direction: TrafficDirection.EGRESS,
+            ruleAction: Action.ALLOW
+        });
+        nacl.addEntry('AllowResponseToHttpsRequestToIpv6', {
+            ruleNumber: 101,
+            cidr: AclCidr.anyIpv6(),
+            traffic: AclTraffic.tcpPortRange(1024,65535),
+            direction: TrafficDirection.EGRESS,
+            ruleAction: Action.ALLOW
+        });
+
         new CfnFlowLog(this, 'CfnVpcFlowLog', {
             resourceId: vpc.vpcId,
             resourceType: 'VPC',
@@ -145,7 +190,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
 
         const privateHostedZone = new PrivateHostedZone(this, 'PrivateHostedZone', {
             vpc,
-            zoneName: `${props.hostname}.private`
+            zoneName: `${props.hostname}.internal`
         });
 
         const applicationLoadBalancerSecurityGroup = new SecurityGroup(this, 'ApplicationLoadBalancerSecurityGroup', {vpc});
@@ -170,7 +215,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             engineMode: 'serverless',
             enableHttpEndpoint: true,
             databaseName: 'wordpress',
-            deletionProtection: props.enableDeletionProtection,
+            deletionProtection: props.resourceDeletionProtection,
             dbClusterParameterGroupName: new CfnDBClusterParameterGroup(this, 'RdsAuroraMySqlServerlessClusterParameterGroup', {
                 family: 'aurora-mysql5.7',
                 description: 'RDS Aurora MySQL Serverless Cluster Parameter Group',
@@ -262,16 +307,21 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
 
         const applicationLoadBalancer = new ApplicationLoadBalancer(this, 'ApplicationLoadBalancer', {
             vpc,
-            deletionProtection: props.enableDeletionProtection,
+            deletionProtection: props.resourceDeletionProtection,
             http2Enabled: true,
             internetFacing: true,
             securityGroup: applicationLoadBalancerSecurityGroup
         });
-        applicationLoadBalancer.setAttribute('routing.http.drop_invalid_header_fields.enabled','true')
+        applicationLoadBalancer.setAttribute('routing.http.drop_invalid_header_fields.enabled', 'true')
         applicationLoadBalancer.logAccessLogs(loggingBucket, 'application-load-balancer')
-
-        const httpListener = applicationLoadBalancer.addListener('HttpsListener', {
+        applicationLoadBalancer.addListener('HttpListener', {
             port: 80,
+            protocol: ApplicationProtocol.HTTP,
+            defaultAction: ListenerAction.redirect({protocol: 'HTTPS', port: '443'})
+        });
+
+        const httpsListener = applicationLoadBalancer.addListener('HttpsListener', {
+            port: 443,
             protocol: ApplicationProtocol.HTTPS,
             certificates: [acmCertificate]
         });
@@ -369,7 +419,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             loadBalancerArns: applicationLoadBalancer.loadBalancerArn,
             targetGroupArn: _wordPressFargateServiceTargetGroup.ref
         });
-        httpListener.addTargetGroups('WordPress', {targetGroups: [wordPressFargateServiceTargetGroup]});
+        httpsListener.addTargetGroups('WordPress', {targetGroups: [wordPressFargateServiceTargetGroup]});
 
         const _wordPressFargateService = new CfnService(this, 'CfnWordPressFargateService', {
             cluster: ecsCluster.clusterArn,
@@ -399,7 +449,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             platformVersion: '1.4.0',
             taskDefinition: wordPressFargateTaskDefinition.taskDefinitionArn
         });
-        _wordPressFargateService.addOverride('DependsOn', this.getLogicalId(httpListener.node.defaultChild as CfnListener));
+        _wordPressFargateService.addOverride('DependsOn', this.getLogicalId(httpsListener.node.defaultChild as CfnListener));
 
         const wordPressFargateService = FargateService.fromFargateServiceArn(this, 'WordPressFargateService', _wordPressFargateService.ref);
 
@@ -419,107 +469,9 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             scaleOutCooldown: Duration.minutes(3)
         });
 
-        const wordPressDistribution = new CloudFrontWebDistribution(this, 'WordPressDistribution', {
-            originConfigs: [
-                {
-                    customOriginSource: {
-                        domainName: applicationLoadBalancer.loadBalancerDnsName,
-                        originProtocolPolicy: OriginProtocolPolicy.HTTPS_ONLY,
-                        originReadTimeout: Duration.minutes(1)
-                    },
-                    behaviors: [
-                        {
-                            isDefaultBehavior: true,
-                            forwardedValues: {
-                                queryString: true,
-                                cookies: {
-                                    forward: 'whitelist',
-                                    whitelistedNames: [
-                                        'comment_*',
-                                        'wordpress_*',
-                                        'wp-settings-*'
-                                    ]
-                                },
-                                headers: [
-                                    'Host',
-                                    'CloudFront-Forwarded-Proto',
-                                    'CloudFront-Is-Mobile-Viewer',
-                                    'CloudFront-Is-Tablet-Viewer',
-                                    'CloudFront-Is-Desktop-Viewer'
-                                ]
-                            },
-                            cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD_OPTIONS,
-                            allowedMethods: CloudFrontAllowedMethods.ALL
-                        },
-                        {
-                            pathPattern: 'wp-admin/*',
-                            forwardedValues: {
-                                queryString: true,
-                                cookies: {
-                                    forward: 'all'
-                                },
-                                headers: ['*']
-                            },
-                            cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD_OPTIONS,
-                            allowedMethods: CloudFrontAllowedMethods.ALL
-                        },
-                        {
-                            pathPattern: 'wp-login.php',
-                            forwardedValues: {
-                                queryString: true,
-                                cookies: {
-                                    forward: 'all'
-                                },
-                                headers: ['*']
-                            },
-                            cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD_OPTIONS,
-                            allowedMethods: CloudFrontAllowedMethods.ALL
-                        }
-                    ]
-                }
-            ],
-            priceClass: PriceClass.PRICE_CLASS_ALL,
-            viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-            httpVersion: HttpVersion.HTTP2,
-            defaultRootObject: '',
-            viewerCertificate: ViewerCertificate.fromAcmCertificate(cloudFrontAcmCertificate, {aliases: [props.hostname]}),
-        });
-
-        const staticContentBucketOriginAccessIdentity = new OriginAccessIdentity(this, 'StaticContentBucketOriginAccessIdentity');
-        staticContentBucket.grantRead(staticContentBucketOriginAccessIdentity);
-
-        const staticContentDistribution = new CloudFrontWebDistribution(this, 'StaticContentDistribution', {
-            originConfigs: [
-                {
-                    s3OriginSource: {
-                        s3BucketSource: staticContentBucket,
-                        originAccessIdentity: staticContentBucketOriginAccessIdentity
-                    },
-                    behaviors: [
-                        {
-                            isDefaultBehavior: true,
-                            forwardedValues: {
-                                queryString: true,
-                                cookies: {
-                                    forward: 'none'
-                                }
-                            },
-                            cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD,
-                            allowedMethods: CloudFrontAllowedMethods.GET_HEAD
-                        }
-                    ]
-                },
-            ],
-            priceClass: PriceClass.PRICE_CLASS_ALL,
-            viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-            httpVersion: HttpVersion.HTTP2,
-            defaultRootObject: '',
-            viewerCertificate: ViewerCertificate.fromAcmCertificate(cloudFrontAcmCertificate, {aliases: [`static.${props.hostname}`]}),
-        });
-
-        const webAcl = new CfnWebACL(this, 'WafApplicationLoadBalancerWebAcl', {
+        const wordPressDistributionWafWebAcl = new CfnWebACL(this, 'WordPressCloudFrontDistributionWafWebAcl', {
             defaultAction: {allow: {}},
-            scope: 'REGIONAL',
+            scope: 'CLOUDFRONT',
             visibilityConfig: {
                 sampledRequestsEnabled: true,
                 cloudWatchMetricsEnabled: true,
@@ -631,9 +583,150 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             ]
         });
 
-        new CfnWebACLAssociation(this, 'ApplicationLoadBalancerWafAssociation', {
+        const applicationLoadBalancerWebAcl = new CfnWebACL(this, 'ApplicationLoadBalancerWafWebAcl', {
+            defaultAction: {block: {}},
+            scope: 'REGIONAL',
+            visibilityConfig: {
+                sampledRequestsEnabled: true,
+                cloudWatchMetricsEnabled: true,
+                metricName: 'WebAclMetric'
+            },
+            rules: [
+                {
+                    name: 'RuleWithOnlyAllowRequestFromCloudFront',
+                    priority: 0,
+                    action: {allow: {}},
+                    visibilityConfig: {
+                        sampledRequestsEnabled: true,
+                        cloudWatchMetricsEnabled: true,
+                        metricName: 'OnlyAllowRequestFromCloudFrontMetric'
+                    },
+                    statement: {
+                        byteMatchStatement: {
+                            fieldToMatch: {
+                                singleHeader: {
+                                    Name: 'X-Request-From-CloudFront'
+                                }
+                            },
+                            positionalConstraint: 'EXACTLY',
+                            searchString: props.cloudFrontHashHeader || Buffer.from(props.domainName).toString('base64'),
+                            textTransformations: [
+                                {
+                                    type: 'NONE',
+                                    priority: 0
+                                }
+                            ]
+                        }
+                    }
+                }
+            ]
+        });
+
+        new CfnWebACLAssociation(this, 'ApplicationLoadBalancerWafWebAclAssociation', {
             resourceArn: applicationLoadBalancer.loadBalancerArn,
-            webAclArn: webAcl.attrArn
+            webAclArn: applicationLoadBalancerWebAcl.attrArn
+        });
+
+        const wordPressDistribution = new CloudFrontWebDistribution(this, 'WordPressDistribution', {
+            originConfigs: [
+                {
+                    customOriginSource: {
+                        domainName: applicationLoadBalancer.loadBalancerDnsName,
+                        originProtocolPolicy: OriginProtocolPolicy.HTTPS_ONLY,
+                        originReadTimeout: Duration.minutes(1),
+                        originHeaders: {
+                            'X-Request-From-CloudFront': props.cloudFrontHashHeader || Buffer.from(props.domainName).toString('base64')
+                        }
+                    },
+                    behaviors: [
+                        {
+                            isDefaultBehavior: true,
+                            forwardedValues: {
+                                queryString: true,
+                                cookies: {
+                                    forward: 'whitelist',
+                                    whitelistedNames: [
+                                        'comment_*',
+                                        'wordpress_*',
+                                        'wp-settings-*'
+                                    ]
+                                },
+                                headers: [
+                                    'Host',
+                                    'CloudFront-Forwarded-Proto',
+                                    'CloudFront-Is-Mobile-Viewer',
+                                    'CloudFront-Is-Tablet-Viewer',
+                                    'CloudFront-Is-Desktop-Viewer'
+                                ]
+                            },
+                            cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD_OPTIONS,
+                            allowedMethods: CloudFrontAllowedMethods.ALL
+                        },
+                        {
+                            pathPattern: 'wp-admin/*',
+                            forwardedValues: {
+                                queryString: true,
+                                cookies: {
+                                    forward: 'all'
+                                },
+                                headers: ['*']
+                            },
+                            cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD_OPTIONS,
+                            allowedMethods: CloudFrontAllowedMethods.ALL
+                        },
+                        {
+                            pathPattern: 'wp-login.php',
+                            forwardedValues: {
+                                queryString: true,
+                                cookies: {
+                                    forward: 'all'
+                                },
+                                headers: ['*']
+                            },
+                            cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD_OPTIONS,
+                            allowedMethods: CloudFrontAllowedMethods.ALL
+                        }
+                    ]
+                }
+            ],
+            priceClass: PriceClass.PRICE_CLASS_ALL,
+            viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            httpVersion: HttpVersion.HTTP2,
+            defaultRootObject: '',
+            viewerCertificate: ViewerCertificate.fromAcmCertificate(acmCertificate, {aliases: [props.hostname]}),
+            webACLId: wordPressDistributionWafWebAcl.attrId
+        });
+
+        const staticContentBucketOriginAccessIdentity = new OriginAccessIdentity(this, 'StaticContentBucketOriginAccessIdentity');
+        staticContentBucket.grantRead(staticContentBucketOriginAccessIdentity);
+
+        const staticContentDistribution = new CloudFrontWebDistribution(this, 'StaticContentDistribution', {
+            originConfigs: [
+                {
+                    s3OriginSource: {
+                        s3BucketSource: staticContentBucket,
+                        originAccessIdentity: staticContentBucketOriginAccessIdentity
+                    },
+                    behaviors: [
+                        {
+                            isDefaultBehavior: true,
+                            forwardedValues: {
+                                queryString: true,
+                                cookies: {
+                                    forward: 'none'
+                                }
+                            },
+                            cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD,
+                            allowedMethods: CloudFrontAllowedMethods.GET_HEAD
+                        }
+                    ]
+                },
+            ],
+            priceClass: PriceClass.PRICE_CLASS_ALL,
+            viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            httpVersion: HttpVersion.HTTP2,
+            defaultRootObject: '',
+            viewerCertificate: ViewerCertificate.fromAcmCertificate(acmCertificate, {aliases: [`assets.${props.hostname}`]}),
         });
 
         const backupVault = new BackupVault(this, 'BackupVault', {removalPolicy: props.removalPolicy});
@@ -651,7 +744,8 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             ]
         });
 
-        const awsConfigOnComplianceSnsTopic = new Topic(this, 'AwsConfigOnComplianceSnsTopic');
+        const awsManagedSnsKmsKey = Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/sns');
+        const awsConfigOnComplianceSnsTopic = new Topic(this, 'AwsConfigOnComplianceSnsTopic', {masterKey: awsManagedSnsKmsKey});
         props.snsEmailSubscription.forEach(email => awsConfigOnComplianceSnsTopic.addSubscription(new EmailSubscription(email)));
 
         const awsConfigManagesRules = [
@@ -673,22 +767,22 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             }),
             new ManagedRule(this, 'AwsConfigManagedRuleAutoScalingGroupElbHealthcheckRequired', {identifier: 'AUTOSCALING_GROUP_ELB_HEALTHCHECK_REQUIRED'}),
             new ManagedRule(this, 'AwsConfigManagedRuleIncomingSshDisabled', {identifier: 'INCOMING_SSH_DISABLED'}),
-            // new ManagedRule(this, 'AwsConfigManagedRuleSnsEncryptedKms', {identifier: 'SNS_ENCRYPTED_KMS'}),
-            new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpDropInvalidHeaderEnabled', {identifier: 'ALB_HTTP_DROP_INVALID_HEADER_ENABLED'}),
-            new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpToHttpsRedirectionCheck', {identifier: 'ALB_HTTP_TO_HTTPS_REDIRECTION_CHECK'}),
-            new ManagedRule(this, 'AwsConfigManagedRuleAlbWafEnabled', {
-                identifier: 'ALB_WAF_ENABLED',
-                inputParameters: {wafWebAclIds: webAcl.attrArn}
-            }),
-            new ManagedRule(this, 'AwsConfigManagedRuleCloudFrontOriginAccessIdentityEnabled', {identifier: 'CLOUDFRONT_ORIGIN_ACCESS_IDENTITY_ENABLED'}),
-            new ManagedRule(this, 'AwsConfigManagedRuleCloudFrontViewerPolicyHttps', {identifier: 'CLOUDFRONT_VIEWER_POLICY_HTTPS'}),
-            new ManagedRule(this, 'AwsConfigManagedRuleEfsInBackupPlan', {identifier: 'EFS_IN_BACKUP_PLAN'}),
-            new ManagedRule(this, 'AwsConfigManagedRuleEfsEncryptedCheck', {identifier: 'EFS_ENCRYPTED_CHECK'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleSnsEncryptedKms', {identifier: 'SNS_ENCRYPTED_KMS'}),
             new ManagedRule(this, 'AwsConfigManagedRuleElbDeletionProtection', {identifier: 'ELB_DELETION_PROTECTION_ENABLED'}),
             new ManagedRule(this, 'AwsConfigManagedRuleElbLoggingEnabled', {
                 identifier: 'ELB_LOGGING_ENABLED',
                 inputParameters: {s3BucketNames: loggingBucket.bucketName}
             }),
+            new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpDropInvalidHeaderEnabled', {identifier: 'ALB_HTTP_DROP_INVALID_HEADER_ENABLED'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpToHttpsRedirectionCheck', {identifier: 'ALB_HTTP_TO_HTTPS_REDIRECTION_CHECK'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleAlbWafEnabled', {
+                identifier: 'ALB_WAF_ENABLED',
+                inputParameters: {wafWebAclIds: applicationLoadBalancerWebAcl.attrArn}
+            }),
+            new ManagedRule(this, 'AwsConfigManagedRuleCloudFrontOriginAccessIdentityEnabled', {identifier: 'CLOUDFRONT_ORIGIN_ACCESS_IDENTITY_ENABLED'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleCloudFrontViewerPolicyHttps', {identifier: 'CLOUDFRONT_VIEWER_POLICY_HTTPS'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleEfsInBackupPlan', {identifier: 'EFS_IN_BACKUP_PLAN'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleEfsEncryptedCheck', {identifier: 'EFS_ENCRYPTED_CHECK'}),
             new ManagedRule(this, 'AwsConfigManagedRuleRdsClusterDeletionProtectionEnabled', {identifier: 'RDS_CLUSTER_DELETION_PROTECTION_ENABLED'}),
             new ManagedRule(this, 'AwsConfigManagedRuleEdsInBackupPlan', {identifier: 'RDS_IN_BACKUP_PLAN'}),
             new ManagedRule(this, 'AwsConfigManagedRuleS3DefaultEncryptionKms', {identifier: 'S3_DEFAULT_ENCRYPTION_KMS'}),
@@ -711,7 +805,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
 
         const staticContentDnsRecord = new ARecord(this, 'StaticContentDnsRecord', {
             zone: publicHostedZone,
-            recordName: `static.${props.hostname}`,
+            recordName: `assets.${props.hostname}`,
             target: RecordTarget.fromAlias(new CloudFrontTarget(staticContentDistribution))
         });
 
@@ -719,7 +813,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             recordNames: [`www.${props.hostname}`],
             targetDomain: props.hostname,
             zone: publicHostedZone,
-            certificate: cloudFrontAcmCertificate
+            certificate: acmCertificate
         });
 
         new CfnOutput(this, 'RootHostname', {
