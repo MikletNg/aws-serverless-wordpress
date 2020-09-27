@@ -61,7 +61,14 @@ import {CloudFormationStackDriftDetectionCheck, ManagedRule} from '@aws-cdk/aws-
 import {Topic} from '@aws-cdk/aws-sns';
 import {EmailSubscription} from '@aws-cdk/aws-sns-subscriptions';
 import {SnsTopic} from '@aws-cdk/aws-events-targets';
-import {Alias} from "@aws-cdk/aws-kms";
+import {Alias} from '@aws-cdk/aws-kms';
+import {Asset} from '@aws-cdk/aws-s3-assets';
+import {Repository} from "@aws-cdk/aws-ecr";
+import {BuildSpec, Cache, ComputeType, LinuxBuildImage, PipelineProject} from "@aws-cdk/aws-codebuild";
+import path = require('path');
+import {Artifact, Pipeline} from "@aws-cdk/aws-codepipeline";
+import {CodeBuildAction, S3SourceAction} from "@aws-cdk/aws-codepipeline-actions";
+import {DockerImageAsset} from "@aws-cdk/aws-ecr-assets";
 
 interface IDatabaseCredential {
     username: string
@@ -83,6 +90,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
     constructor(scope: cdk.Construct, id: string, props: StackProps) {
         super(scope, id, props);
 
+        const awsManagedSnsKmsKey = Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/sns');
         // const publicHostedZone = new PublicHostedZone(this, 'PublicHostedZone', {
         //     zoneName: props.domainName
         // });
@@ -128,6 +136,22 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             ]
         });
 
+        // const codeBuildCacheBucket = new Bucket(this, 'CodeBuildCacheBucket', {
+        //     encryption: BucketEncryption.S3_MANAGED,
+        //     removalPolicy: props.removalPolicy,
+        //     lifecycleRules: [
+        //         {
+        //             enabled: true,
+        //             transitions: [
+        //                 {
+        //                     storageClass: StorageClass.INTELLIGENT_TIERING,
+        //                     transitionAfter: Duration.days(1)
+        //                 }
+        //             ]
+        //         }
+        //     ]
+        // });
+
         const vpc = new Vpc(this, 'Vpc', {
             natGateways: 3,
             maxAzs: 3,
@@ -168,14 +192,14 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         nacl.addEntry('AllowResponseToHttpsRequestToIpv4', {
             ruleNumber: 100,
             cidr: AclCidr.anyIpv4(),
-            traffic: AclTraffic.tcpPortRange(1024,65535),
+            traffic: AclTraffic.tcpPortRange(1024, 65535),
             direction: TrafficDirection.EGRESS,
             ruleAction: Action.ALLOW
         });
         nacl.addEntry('AllowResponseToHttpsRequestToIpv6', {
             ruleNumber: 101,
             cidr: AclCidr.anyIpv6(),
-            traffic: AclTraffic.tcpPortRange(1024,65535),
+            traffic: AclTraffic.tcpPortRange(1024, 65535),
             direction: TrafficDirection.EGRESS,
             ruleAction: Action.ALLOW
         });
@@ -280,6 +304,93 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
 
         const fileSystemAccessPoint = fileSystem.addAccessPoint('AccessPoint');
 
+        // const onEcrImageScanCompletedSnsTopic = new Topic(this, 'OnEcrImageScanCompletedSnsTpoic', {masterKey: Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/sns')});
+        // props.snsEmailSubscription.forEach(email => awsConfigOnComplianceSnsTopic.addSubscription(new EmailSubscription(email)));
+        //
+        // const nginxDockerImageRepository = new Repository(this, 'NginxDockerImageRepository', {imageScanOnPush: true});
+        // nginxDockerImageRepository.onImageScanCompleted('NginxDockerImageRepositoryScanCompleted', {target: new SnsTopic(onEcrImageScanCompletedSnsTopic)});
+        // const nginxDockerImageAsset = new Asset(this, 'NginxDockerImageAsset', {path: path.join(__dirname, 'images/nginx')});
+        //
+        // const wordPressDockerImageRepository = new Repository(this, 'WordPressDockerImageRepository', {imageScanOnPush: true});
+        // wordPressDockerImageRepository.onImageScanCompleted('WordPressDockerImageRepositoryScanCompleted', {target: new SnsTopic(onEcrImageScanCompletedSnsTopic)});
+        //
+        // const wordPressDockerImageAsset = new Asset(this, 'WordPressDockerImageAsset', {path: path.join(__dirname, 'images/wordpress')});
+        //
+        // const wordPressDockerImageBuild = new PipelineProject(this, 'WordPressDockerImageBuild', {
+        //     buildSpec: BuildSpec.fromObject({
+        //         version: 0.2,
+        //         phases: {
+        //             pre_build: {
+        //                 commands: [
+        //                     'echo Logging in to Amazon ECR...',
+        //                     'aws --version',
+        //                     '$(aws ecr get-login --region $AWS_DEFAULT_REGION --no-include-email)',
+        //                     'COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)',
+        //                     'IMAGE_TAG=${COMMIT_HASH:=latest}'
+        //                 ]
+        //             },
+        //             build: {
+        //                 commands: [
+        //                     'echo Build started on `date`',
+        //                     'echo Building the Docker image...',
+        //                     'docker build -t $REPOSITORY_URI:latest .',
+        //                     'docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG'
+        //                 ]
+        //             },
+        //             post_build:{
+        //                 commands: [
+        //                     'echo Build completed on `date`',
+        //                     'echo Pushing the Docker images...',
+        //                     'docker push $REPOSITORY_URI:latest',
+        //                     'docker push $REPOSITORY_URI:$IMAGE_TAG'
+        //                 ]
+        //             }
+        //         }
+        //     }),
+        //     environmentVariables: {
+        //         REPOSITORY_URI: {
+        //             value: wordPressDockerImageRepository.repositoryUri
+        //         }
+        //     },
+        //     cache: Cache.bucket(codeBuildCacheBucket),
+        //     environment: {
+        //         buildImage: LinuxBuildImage.STANDARD_4_0,
+        //         computeType: ComputeType.SMALL
+        //     }
+        // });
+        // wordPressDockerImageRepository.grantPullPush(wordPressDockerImageBuild.role!);
+        // codeBuildCacheBucket.grantReadWrite(wordPressDockerImageBuild.role!);
+        //
+        // const dockerImagesBuildInputArtifact = new Artifact('DockerImagesBuildInputArtifact');
+        // const dockerImagesBuildOutputArtifact = new Artifact('DockerImagesBuildOutputArtifact');
+        //
+        // const wordPressDockerImagePipeline = new Pipeline(this, 'WordPressDockerImageBuildPipeline', {
+        //     stages: [
+        //         {
+        //             stageName: 'Source',
+        //             actions: [
+        //                 new S3SourceAction({
+        //                     actionName: 'Source',
+        //                     bucket: wordPressDockerImageAsset.bucket,
+        //                     bucketKey: wordPressDockerImageAsset.s3ObjectKey,
+        //                     output: dockerImagesBuildInputArtifact
+        //                 })
+        //             ]
+        //         },
+        //         {
+        //             stageName: 'Build',
+        //             actions: [
+        //                 new CodeBuildAction({
+        //                     actionName: 'Build',
+        //                     project: wordPressDockerImageBuild,
+        //                     input: dockerImagesBuildInputArtifact,
+        //                     outputs: [dockerImagesBuildOutputArtifact]
+        //                 })
+        //             ]
+        //         }
+        //     ]
+        // });
+
         const _ecsCluster = new CfnCluster(this, 'EcsCluster', {
             capacityProviders: ['FARGATE', 'FARGATE_SPOT'],
             defaultCapacityProviderStrategy: [
@@ -362,8 +473,11 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             }
         });
 
+        const wordPressDockerImageAsset = new DockerImageAsset(this, 'WordPressDockerImageAsset', {directory: path.join(__dirname, 'images/wordpress')});
+        const nginxDockerImageAsset = new DockerImageAsset(this, 'NginxDockerImageAsset', {directory: path.join(__dirname, 'images/nginx')});
+
         const wordPressContainer = wordPressFargateTaskDefinition.addContainer('WordPress', {
-            image: ContainerImage.fromRegistry('monogramm/docker-wordpress:5.5-apache'),
+            image: ContainerImage.fromDockerImageAsset(wordPressDockerImageAsset),
             environment: {
                 WORDPRESS_DB_HOST: rdsAuroraClusterPrivateDnsRecord.domainName,
                 WORDPRESS_DB_USER: props.databaseCredential.username,
@@ -377,12 +491,29 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 logRetention: RetentionDays.ONE_MONTH
             })
         });
-        wordPressContainer.addPortMappings({
+        wordPressContainer.addMountPoints({
+            readOnly: false,
+            containerPath: '/var/www/html',
+            sourceVolume: 'WordPressEfsVolume'
+        });
+
+        const nginxContainer = wordPressFargateTaskDefinition.addContainer('Nginx', {
+            image: ContainerImage.fromDockerImageAsset(nginxDockerImageAsset),
+            logging: LogDriver.awsLogs({
+                streamPrefix: `${this.stackName}NginxContainerLog`,
+                logRetention: RetentionDays.ONE_MONTH
+            }),
+            environment:{
+                SERVER_NAME: props.hostname,
+                MEMCACHED_HOST: elastiCacheMemcachedClusterPrivateDnsRecord.domainName
+            }
+        });
+        nginxContainer.addPortMappings({
             hostPort: 80,
             containerPort: 80,
             protocol: Protocol.TCP
         });
-        wordPressContainer.addMountPoints({
+        nginxContainer.addMountPoints({
             readOnly: false,
             containerPath: '/var/www/html',
             sourceVolume: 'WordPressEfsVolume'
@@ -434,7 +565,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             healthCheckGracePeriodSeconds: 60,
             loadBalancers: [
                 {
-                    containerName: 'WordPress',
+                    containerName: nginxContainer.containerName,
                     containerPort: 80,
                     targetGroupArn: wordPressFargateServiceTargetGroup.targetGroupArn
                 }
@@ -464,7 +595,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         wordPressServiceScaling.scaleToTrackMetric('TargetResponseTime', {
             predefinedMetric: PredefinedMetric.ALB_REQUEST_COUNT_PER_TARGET,
             resourceLabel: `${applicationLoadBalancer.loadBalancerFullName}/${_wordPressFargateServiceTargetGroup.attrTargetGroupFullName}`,
-            targetValue: 1000,
+            targetValue: 1024,
             scaleInCooldown: Duration.minutes(3),
             scaleOutCooldown: Duration.minutes(3)
         });
@@ -744,8 +875,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             ]
         });
 
-        const awsManagedSnsKmsKey = Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/sns');
-        const awsConfigOnComplianceSnsTopic = new Topic(this, 'AwsConfigOnComplianceSnsTopic', {masterKey: awsManagedSnsKmsKey});
+        const awsConfigOnComplianceSnsTopic = new Topic(this, 'AwsConfigOnComplianceSnsTopic', {masterKey: Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/sns')});
         props.snsEmailSubscription.forEach(email => awsConfigOnComplianceSnsTopic.addSubscription(new EmailSubscription(email)));
 
         const awsConfigManagesRules = [
