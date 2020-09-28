@@ -1,9 +1,9 @@
 import * as cdk from '@aws-cdk/core';
-import {CfnOutput, Duration, RemovalPolicy, SecretValue} from '@aws-cdk/core';
-import {ARecord, CnameRecord, PrivateHostedZone, PublicHostedZone, RecordTarget} from '@aws-cdk/aws-route53';
-import {Certificate, CertificateValidation} from '@aws-cdk/aws-certificatemanager';
-import {Bucket, BucketEncryption, StorageClass} from '@aws-cdk/aws-s3';
-import {CfnWebACL, CfnWebACLAssociation} from '@aws-cdk/aws-wafv2';
+import { CfnOutput, Duration, RemovalPolicy, SecretValue } from '@aws-cdk/core';
+import { ARecord, CnameRecord, PrivateHostedZone, PublicHostedZone, RecordTarget } from '@aws-cdk/aws-route53';
+import { Certificate, CertificateValidation } from '@aws-cdk/aws-certificatemanager';
+import { Bucket, BucketEncryption, StorageClass } from '@aws-cdk/aws-s3';
+import { CfnWebACL, CfnWebACLAssociation } from '@aws-cdk/aws-wafv2';
 import {
     AclCidr,
     AclTraffic,
@@ -15,12 +15,13 @@ import {
     SecurityGroup,
     SubnetType,
     TrafficDirection,
-    Vpc
+    Vpc,
+    BastionHostLinux
 } from '@aws-cdk/aws-ec2';
-import {CfnDBCluster, CfnDBClusterParameterGroup, CfnDBSubnetGroup} from '@aws-cdk/aws-rds';
-import {Secret} from '@aws-cdk/aws-secretsmanager';
-import {CfnCacheCluster, CfnSubnetGroup} from '@aws-cdk/aws-elasticache';
-import {FileSystem, LifecyclePolicy, PerformanceMode, ThroughputMode} from '@aws-cdk/aws-efs';
+import { CfnDBCluster, CfnDBClusterParameterGroup, CfnDBSubnetGroup } from '@aws-cdk/aws-rds';
+import { Secret } from '@aws-cdk/aws-secretsmanager';
+import { CfnCacheCluster, CfnSubnetGroup } from '@aws-cdk/aws-elasticache';
+import { FileSystem, LifecyclePolicy, PerformanceMode, ThroughputMode } from '@aws-cdk/aws-efs';
 import {
     CfnCluster,
     CfnService,
@@ -40,9 +41,9 @@ import {
     CfnTargetGroup,
     ListenerAction
 } from '@aws-cdk/aws-elasticloadbalancingv2';
-import {ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal} from '@aws-cdk/aws-iam';
-import {RetentionDays} from '@aws-cdk/aws-logs';
-import {PredefinedMetric, ScalableTarget, ServiceNamespace} from '@aws-cdk/aws-applicationautoscaling';
+import { ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal } from '@aws-cdk/aws-iam';
+import { RetentionDays } from '@aws-cdk/aws-logs';
+import { PredefinedMetric, ScalableTarget, ServiceNamespace } from '@aws-cdk/aws-applicationautoscaling';
 import {
     CloudFrontAllowedCachedMethods,
     CloudFrontAllowedMethods,
@@ -54,21 +55,21 @@ import {
     ViewerCertificate,
     ViewerProtocolPolicy
 } from '@aws-cdk/aws-cloudfront';
-import {CloudFrontTarget} from '@aws-cdk/aws-route53-targets';
-import {HttpsRedirect} from '@aws-cdk/aws-route53-patterns';
-import {BackupPlan, BackupResource, BackupVault} from '@aws-cdk/aws-backup';
-import {CloudFormationStackDriftDetectionCheck, ManagedRule} from '@aws-cdk/aws-config';
-import {Topic} from '@aws-cdk/aws-sns';
-import {EmailSubscription} from '@aws-cdk/aws-sns-subscriptions';
-import {SnsTopic} from '@aws-cdk/aws-events-targets';
-import {Alias} from '@aws-cdk/aws-kms';
-import {Asset} from '@aws-cdk/aws-s3-assets';
-import {Repository} from "@aws-cdk/aws-ecr";
-import {BuildSpec, Cache, ComputeType, LinuxBuildImage, PipelineProject} from "@aws-cdk/aws-codebuild";
+import { CloudFrontTarget } from '@aws-cdk/aws-route53-targets';
+import { HttpsRedirect } from '@aws-cdk/aws-route53-patterns';
+import { BackupPlan, BackupResource, BackupVault } from '@aws-cdk/aws-backup';
+import { CloudFormationStackDriftDetectionCheck, ManagedRule } from '@aws-cdk/aws-config';
+import { Topic } from '@aws-cdk/aws-sns';
+import { EmailSubscription } from '@aws-cdk/aws-sns-subscriptions';
+import { SnsTopic } from '@aws-cdk/aws-events-targets';
+import { Alias } from '@aws-cdk/aws-kms';
+import { Asset } from '@aws-cdk/aws-s3-assets';
+import { Repository } from "@aws-cdk/aws-ecr";
+import { BuildSpec, Cache, ComputeType, LinuxBuildImage, PipelineProject } from "@aws-cdk/aws-codebuild";
 import path = require('path');
-import {Artifact, Pipeline} from "@aws-cdk/aws-codepipeline";
-import {CodeBuildAction, S3SourceAction} from "@aws-cdk/aws-codepipeline-actions";
-import {DockerImageAsset} from "@aws-cdk/aws-ecr-assets";
+import { Artifact, Pipeline } from "@aws-cdk/aws-codepipeline";
+import { CodeBuildAction, S3SourceAction } from "@aws-cdk/aws-codepipeline-actions";
+import { DockerImageAsset } from "@aws-cdk/aws-ecr-assets";
 
 interface IDatabaseCredential {
     username: string
@@ -123,21 +124,23 @@ export class AwsServerlessWordpressTestStack extends cdk.Stack {
             zoneName: `${props.hostname}.private`
         });
 
-        const applicationLoadBalancerSecurityGroup = new SecurityGroup(this, 'ApplicationLoadBalancerSecurityGroup', {vpc});
-        const elastiCacheMemcachedSecurityGroup = new SecurityGroup(this, 'ElastiCacheMemcachedSecurityGroup', {vpc});
-        const rdsAuroraClusterSecurityGroup = new SecurityGroup(this, 'RdsAuroraClusterSecurityGroup', {vpc});
-        const ecsFargateServiceSecurityGroup = new SecurityGroup(this, 'EcsFargateServiceSecurityGroup', {vpc});
-        const efsFileSystemSecurityGroup = new SecurityGroup(this, 'EfsFileSystemSecurityGroup', {vpc});
+        const applicationLoadBalancerSecurityGroup = new SecurityGroup(this, 'ApplicationLoadBalancerSecurityGroup', { vpc });
+        const elastiCacheMemcachedSecurityGroup = new SecurityGroup(this, 'ElastiCacheMemcachedSecurityGroup', { vpc });
+        const rdsAuroraClusterSecurityGroup = new SecurityGroup(this, 'RdsAuroraClusterSecurityGroup', { vpc });
+        const ecsFargateServiceSecurityGroup = new SecurityGroup(this, 'EcsFargateServiceSecurityGroup', { vpc });
+        const efsFileSystemSecurityGroup = new SecurityGroup(this, 'EfsFileSystemSecurityGroup', { vpc });
+        const bastionHostSecurityGroup = new SecurityGroup(this, 'BastionHostSecurityGroup', { vpc });
 
         applicationLoadBalancerSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(80));
         ecsFargateServiceSecurityGroup.addIngressRule(applicationLoadBalancerSecurityGroup, Port.tcp(80));
         elastiCacheMemcachedSecurityGroup.addIngressRule(ecsFargateServiceSecurityGroup, Port.tcp(11211));
         rdsAuroraClusterSecurityGroup.addIngressRule(ecsFargateServiceSecurityGroup, Port.tcp(3306));
         efsFileSystemSecurityGroup.addIngressRule(ecsFargateServiceSecurityGroup, Port.tcp(2049));
+        efsFileSystemSecurityGroup.addIngressRule(bastionHostSecurityGroup, Port.tcp(2049));
 
         const rdsAuroraClusterPasswordSecret = new Secret(this, 'RdsAuroraClusterPasswordSecret', {
             removalPolicy: props.removalPolicy,
-            generateSecretString: {excludeCharacters: ` ;+%{}` + `@'"\`/\\#`}
+            generateSecretString: { excludeCharacters: ` ;+%{}` + `@'"\`/\\#` }
         });
 
         const rdsAuroraCluster = new CfnDBCluster(this, 'RdsAuroraMySqlServerlessCluster', {
@@ -209,6 +212,12 @@ export class AwsServerlessWordpressTestStack extends cdk.Stack {
         });
 
         const fileSystemAccessPoint = fileSystem.addAccessPoint('AccessPoint');
+
+        const bastionHost = new BastionHostLinux(this, 'BastionHost', {
+            vpc,
+            securityGroup: bastionHostSecurityGroup
+        });
+        bastionHost.instance.addUserData(`mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${fileSystem.fileSystemId}.efs.${this.region}.amazonaws.com:/ /efs `)
 
         const _ecsCluster = new CfnCluster(this, 'EcsCluster', {
             capacityProviders: ['FARGATE', 'FARGATE_SPOT'],
@@ -286,8 +295,8 @@ export class AwsServerlessWordpressTestStack extends cdk.Stack {
             }
         });
 
-        const wordPressDockerImageAsset = new DockerImageAsset(this, 'WordPressDockerImageAsset', {directory: path.join(__dirname, 'images/wordpress')});
-        const nginxDockerImageAsset = new DockerImageAsset(this, 'NginxDockerImageAsset', {directory: path.join(__dirname, 'images/nginx')});
+        const wordPressDockerImageAsset = new DockerImageAsset(this, 'WordPressDockerImageAsset', { directory: path.join(__dirname, 'images/wordpress') });
+        const nginxDockerImageAsset = new DockerImageAsset(this, 'NginxDockerImageAsset', { directory: path.join(__dirname, 'images/nginx') });
 
         const wordPressContainer = wordPressFargateTaskDefinition.addContainer('WordPress', {
             image: ContainerImage.fromDockerImageAsset(wordPressDockerImageAsset),
@@ -316,7 +325,7 @@ export class AwsServerlessWordpressTestStack extends cdk.Stack {
                 streamPrefix: `${this.stackName}NginxContainerLog`,
                 logRetention: RetentionDays.ONE_DAY
             }),
-            environment:{
+            environment: {
                 SERVER_NAME: props.hostname,
                 MEMCACHED_HOST: elastiCacheMemcachedClusterPrivateDnsRecord.domainName,
                 NGINX_ENTRYPOINT_QUIET_LOGS: '1'
@@ -364,7 +373,7 @@ export class AwsServerlessWordpressTestStack extends cdk.Stack {
             loadBalancerArns: applicationLoadBalancer.loadBalancerArn,
             targetGroupArn: _wordPressFargateServiceTargetGroup.ref
         });
-        httpListener.addTargetGroups('WordPress', {targetGroups: [wordPressFargateServiceTargetGroup]});
+        httpListener.addTargetGroups('WordPress', { targetGroups: [wordPressFargateServiceTargetGroup] });
 
         const _wordPressFargateService = new CfnService(this, 'CfnWordPressFargateService', {
             cluster: ecsCluster.clusterArn,
