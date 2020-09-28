@@ -43,8 +43,9 @@ RUN set -ex; \
 		zip \
 	; \
 	pecl install \
-		apcu-5.1.18 \
-		memcached-3.1.5 \
+		apcu \
+		apc \
+		memcached \
 	; \
 	docker-php-ext-enable \
 		apcu \
