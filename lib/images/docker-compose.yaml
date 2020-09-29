@@ -1,0 +1,44 @@
+version: "3.8"
+
+volumes:
+  wordpress-volume:
+  mysql-volume:
+
+services:
+
+  mysql:
+    image: mysql:latest
+    restart: always
+    environment:
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: P@ssw0rd
+      MYSQL_ROOT_PASSWORD: R00tP@ssw0rd
+    volumes:
+    - mysq-volume:/var/lib/mysql
+
+  memcached:
+    image: memcached:latest
+
+  nginx:
+    build: nginx/
+    ports:
+    - 8080:80
+    links:
+    - wordpress:wordpress
+    - memcached:memcached
+    volumes:
+    - wordpress-volume:/var/www/html
+
+  wordpress:
+    build: wordpress/
+    environment:
+      WORDPRESS_DB_HOST: mysql
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: P@ssw0rd
+    volumes:
+    - wordpress-volume:/var/www/html
+    links:
+      - mysql:mysql
+      - memcached:memcached

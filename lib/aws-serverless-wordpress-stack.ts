@@ -281,11 +281,19 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
 
         const fileSystemAccessPoint = fileSystem.addAccessPoint('AccessPoint');
 
+        const fileSystemEndpointPrivateDnsRecord = new CnameRecord(this, 'FileSystemEndpointPrivateDnsRecord', {
+            zone: privateHostedZone,
+            recordName: `nfs.${privateHostedZone.zoneName}`,
+            domainName: rdsAuroraCluster.attrEndpointAddress,
+            ttl: Duration.seconds(60)
+        });
+
         const bastionHost = new BastionHostLinux(this, 'BastionHost', {
             vpc,
             securityGroup: bastionHostSecurityGroup
         });
-        bastionHost.instance.addUserData('mkdir /mnt/efs', `mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${fileSystem.fileSystemId}.efs.${this.region}.amazonaws.com:/ /mnt/efs `)
+        bastionHost.instance.addUserData('mkdir -p /mnt/efs');
+        bastionHost.instance.addUserData(`mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${fileSystemEndpointPrivateDnsRecord.domainName}:/ /mnt/efs `);
 
         const _ecsCluster = new CfnCluster(this, 'EcsCluster', {
             capacityProviders: ['FARGATE', 'FARGATE_SPOT'],
@@ -402,7 +410,8 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             }),
             environment: {
                 SERVER_NAME: props.hostname,
-                MEMCACHED_HOST: elastiCacheMemcachedClusterPrivateDnsRecord.domainName
+                MEMCACHED_HOST: elastiCacheMemcachedClusterPrivateDnsRecord.domainName,
+                NGINX_ENTRYPOINT_QUIET_LOGS: '1'
             }
         });
         nginxContainer.addPortMappings({
@@ -772,7 +781,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             ]
         });
 
-        const awsConfigOnComplianceSnsTopic = new Topic(this, 'AwsConfigOnComplianceSnsTopic', { masterKey: Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/sns') });
+        const awsConfigOnComplianceSnsTopic = new Topic(this, 'AwsConfigOnComplianceSnsTopic', { masterKey: awsManagedSnsKmsKey });
         props.snsEmailSubscription.forEach(email => awsConfigOnComplianceSnsTopic.addSubscription(new EmailSubscription(email)));
 
         const awsConfigManagesRules = [
@@ -858,5 +867,9 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         new CfnOutput(this, 'MemcachedHostname', {
             value: elastiCacheMemcachedClusterPrivateDnsRecord.domainName
         });
+
+        new CfnOutput(this, 'FileSystenHostname', {
+            value: fileSystemEndpointPrivateDnsRecord.domainName
+        })
     }
 }
