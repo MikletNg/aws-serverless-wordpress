@@ -3,12 +3,12 @@ import 'source-map-support/register';
 import * as cdk from '@aws-cdk/core';
 import {RemovalPolicy, Tags} from '@aws-cdk/core';
 import {AwsServerlessWordpressStack} from '../lib/aws-serverless-wordpress-stack';
-import {AwsServerlessWordpressTestStack} from "../lib/aws-serverless-wordpress-test-stack";
 
 const app = new cdk.App();
-new AwsServerlessWordpressTestStack(app, 'AwsServerlessWordpressTestStack', {
+const stack = new AwsServerlessWordpressStack(app, 'AwsServerlessWordpressStack', {
     terminationProtection: false,
     resourceDeletionProtection: false,
+    removalPolicy: RemovalPolicy.DESTROY,
     env: {
         region: 'us-east-1',
         account: '751225572132'
@@ -20,24 +20,6 @@ new AwsServerlessWordpressTestStack(app, 'AwsServerlessWordpressTestStack', {
     domainName: 'blog.miklet.pro',
     hostname: 'blog.miklet.pro',
     alternativeHostname: ['*.blog.miklet.pro'],
-    removalPolicy: RemovalPolicy.DESTROY,
     snsEmailSubscription: ['mike@miklet.pro'],
 });
-
-// const stack = new AwsServerlessWordpressStack(app, 'AwsServerlessWordpressStack', {
-//     terminationProtection: true,
-//     resourceDeletionProtection: true,
-//     env: {
-//         region: 'us-east-1',
-//     },
-//     databaseCredential: {
-//         username: 'wordpress-user',
-//         defaultDatabaseName: 'wordpress'
-//     },
-//     domainName: 'blog.miklet.pro',
-//     hostname: 'blog.miklet.pro',
-//     alternativeHostname: ['*.blog.miklet.pro'],
-//     removalPolicy: RemovalPolicy.DESTROY,
-//     snsEmailSubscription: ['mike@miklet.pro'],
-// });
-// Tags.of(stack).add('aws:cloudformation:stack-name', stack.stackName);
+Tags.of(stack).add('aws-config:cloudformation:stack-name', stack.stackName);

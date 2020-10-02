@@ -6,5 +6,9 @@
     "us-east-1d",
     "us-east-1e",
     "us-east-1f"
-  ]
+  ],
+  "hosted-zone:account=751225572132:domainName=blog.miklet.pro:region=us-east-1": {
+    "Id": "/hostedzone/Z03770041TSIXOAD668R",
+    "Name": "blog.miklet.pro."
+  }
 }

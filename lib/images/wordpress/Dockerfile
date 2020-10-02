@@ -45,10 +45,12 @@ RUN set -ex; \
 	pecl install \
 		apcu \
 		memcached \
+		xhprof \
 	; \
 	docker-php-ext-enable \
 		apcu \
 		memcached \
+		xhprof \
 	 \
 	&& chown www-data:www-data /var/www /var/www/html; \
 	\
