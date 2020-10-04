@@ -21,5 +21,6 @@ const stack = new AwsServerlessWordpressStack(app, 'AwsServerlessWordpressStack'
     hostname: 'blog.miklet.pro',
     alternativeHostname: ['*.blog.miklet.pro'],
     snsEmailSubscription: ['mike@miklet.pro'],
+    loadBalancerAccountId: '127311923021' // https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html#access-logging-bucket-permissions
 });
 Tags.of(stack).add('aws-config:cloudformation:stack-name', stack.stackName);

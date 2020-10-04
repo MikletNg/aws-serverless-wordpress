@@ -63,10 +63,10 @@ RUN set -ex; \
 	apk add --virtual .wordpress-phpexts-rundeps $runDeps; \
 	apk del .build-deps
 
-RUN wget https://elasticache-downloads.s3.amazonaws.com/ClusterClient/PHP-7.3/latest-64bit &&\
-    tar -zxvf latest-64bit &&\
-    cp amazon-elasticache-cluster-client.so /usr/local/lib/php/extensions/ &&\
-    echo 'extension=amazon-elasticache-cluster-client.so' >> $PHP_INI_DIR/php.ini
+#RUN wget https://elasticache-downloads.s3.amazonaws.com/ClusterClient/PHP-7.3/latest-64bit &&\
+#    tar -zxvf latest-64bit &&\
+#    cp amazon-elasticache-cluster-client.so /usr/local/lib/php/extensions/ &&\
+#    echo 'extension=amazon-elasticache-cluster-client.so' >> $PHP_INI_DIR/php.ini
 
 WORKDIR /var/www/html
 
