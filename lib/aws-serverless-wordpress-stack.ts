@@ -40,10 +40,18 @@ import {
     CfnTargetGroup,
     ListenerAction
 } from '@aws-cdk/aws-elasticloadbalancingv2';
-import {ArnPrincipal, ManagedPolicy, PolicyDocument, PolicyStatement, Role, ServicePrincipal} from '@aws-cdk/aws-iam';
+import {
+    AccountRootPrincipal,
+    ArnPrincipal,
+    ManagedPolicy,
+    PolicyDocument,
+    PolicyStatement,
+    Role,
+    ServicePrincipal
+} from '@aws-cdk/aws-iam';
 import {RetentionDays} from '@aws-cdk/aws-logs';
 import {PredefinedMetric, ScalableTarget, ServiceNamespace} from '@aws-cdk/aws-applicationautoscaling';
-import {Alias} from '@aws-cdk/aws-kms';
+import {Alias, Key} from '@aws-cdk/aws-kms';
 import {DockerImageAsset} from "@aws-cdk/aws-ecr-assets";
 import path = require('path');
 import {
@@ -58,7 +66,11 @@ import {
 import {CfnWebACL, CfnWebACLAssociation} from "@aws-cdk/aws-wafv2";
 import {BackupPlan, BackupResource, BackupVault} from "@aws-cdk/aws-backup";
 import {CloudFrontTarget} from "@aws-cdk/aws-route53-targets";
-import {HttpsRedirect} from "@aws-cdk/aws-route53-patterns";
+import {Domain, ElasticsearchVersion} from "@aws-cdk/aws-elasticsearch";
+import {SnsTopic} from "@aws-cdk/aws-events-targets";
+import {CloudFormationStackDriftDetectionCheck, ManagedRule} from "@aws-cdk/aws-config";
+import {EmailSubscription} from "@aws-cdk/aws-sns-subscriptions";
+import {Topic} from "@aws-cdk/aws-sns";
 
 interface IDatabaseCredential {
     username: string
@@ -82,6 +94,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         super(scope, id, props);
 
         const awsManagedSnsKmsKey = Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/sns');
+        const awsManagedS3KmsKey = Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/s3');
 
         const publicHostedZone = PublicHostedZone.fromLookup(this, 'ExistingPublicHostedZone', {domainName: props.domainName});
 
@@ -92,13 +105,15 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         });
 
         const staticContentBucket = new Bucket(this, 'StaticContentBucket', {
-            encryption: BucketEncryption.S3_MANAGED,
+            encryption: BucketEncryption.KMS_MANAGED,
+            encryptionKey: awsManagedS3KmsKey,
             versioned: true,
             removalPolicy: props.removalPolicy
         });
 
         const loggingBucket = new Bucket(this, 'LoggingBucket', {
-            encryption: BucketEncryption.S3_MANAGED,
+            encryption: BucketEncryption.KMS_MANAGED,
+            encryptionKey: awsManagedS3KmsKey,
             removalPolicy: props.removalPolicy,
             lifecycleRules: [
                 {
@@ -139,6 +154,11 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             principals: [new ArnPrincipal(`arn:aws:iam::${props.loadBalancerAccountId}:root`)],
             actions: ['s3:PutObject'],
             resources: [`${loggingBucket.bucketArn}/application-load-balancer/AWSLogs/${this.account}/*`]
+        }));
+        loggingBucket.addToResourcePolicy(new PolicyStatement({
+            principals: [new AccountRootPrincipal()],
+            actions: ['s3:GetBucketAcl', 's3:PutBucketAcl'],
+            resources: [loggingBucket.bucketArn]
         }));
 
         const vpc = new Vpc(this, 'Vpc', {
@@ -211,6 +231,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         const rdsAuroraClusterSecurityGroup = new SecurityGroup(this, 'RdsAuroraClusterSecurityGroup', {vpc});
         const ecsFargateServiceSecurityGroup = new SecurityGroup(this, 'EcsFargateServiceSecurityGroup', {vpc});
         const efsFileSystemSecurityGroup = new SecurityGroup(this, 'EfsFileSystemSecurityGroup', {vpc});
+        const elasticsearchDomainSecurityGroup = new SecurityGroup(this, 'ElasticsearchDomainSecurityGroup', {vpc});
         const bastionHostSecurityGroup = new SecurityGroup(this, 'BastionHostSecurityGroup', {vpc});
 
         applicationLoadBalancerSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(443));
@@ -218,7 +239,12 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         elastiCacheMemcachedSecurityGroup.addIngressRule(ecsFargateServiceSecurityGroup, Port.tcp(11211));
         rdsAuroraClusterSecurityGroup.addIngressRule(ecsFargateServiceSecurityGroup, Port.tcp(3306));
         efsFileSystemSecurityGroup.addIngressRule(ecsFargateServiceSecurityGroup, Port.tcp(2049));
+        elasticsearchDomainSecurityGroup.addIngressRule(ecsFargateServiceSecurityGroup, Port.tcp(443));
+
         efsFileSystemSecurityGroup.addIngressRule(bastionHostSecurityGroup, Port.tcp(2049));
+        elastiCacheMemcachedSecurityGroup.addIngressRule(bastionHostSecurityGroup, Port.tcp(11211));
+        rdsAuroraClusterSecurityGroup.addIngressRule(bastionHostSecurityGroup, Port.tcp(3306));
+        elasticsearchDomainSecurityGroup.addIngressRule(bastionHostSecurityGroup, Port.tcp(443));
 
         const rdsAuroraClusterPasswordSecret = new Secret(this, 'RdsAuroraClusterPasswordSecret', {
             removalPolicy: props.removalPolicy,
@@ -258,7 +284,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             zone: privateHostedZone,
             recordName: `database.${privateHostedZone.zoneName}`,
             domainName: rdsAuroraCluster.attrEndpointAddress,
-            ttl: Duration.seconds(60)
+            ttl: Duration.hours(1)
         });
 
         const elastiCacheMemcachedCluster = new CfnCacheCluster(this, 'ElastiCacheMemcachedCluster', {
@@ -277,7 +303,27 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             zone: privateHostedZone,
             recordName: `cache.${privateHostedZone.zoneName}`,
             domainName: elastiCacheMemcachedCluster.attrConfigurationEndpointAddress,
-            ttl: Duration.seconds(60)
+            ttl: Duration.hours(1)
+        });
+
+        const elasticsearchDomain = new Domain(this, 'ElasticsearchDomain', {
+            version: ElasticsearchVersion.V7_7,
+            capacity: {dataNodes: 3, dataNodeInstanceType: 't3.medium.elasticsearch'},
+            zoneAwareness: {enabled: true, availabilityZoneCount: 3},
+            encryptionAtRest: {enabled: true},
+            nodeToNodeEncryption: true,
+            ebs: {volumeSize: 10},
+            enforceHttps: true,
+            vpcOptions: {
+                subnets: vpc.isolatedSubnets,
+                securityGroups: [elasticsearchDomainSecurityGroup]
+            }
+        });
+        const elasticsearchDomainPrivateDnsRecord = new CnameRecord(this, 'ElasticsearchDomainPrivateDnsRecord', {
+            zone: privateHostedZone,
+            recordName: `search.${privateHostedZone.zoneName}`,
+            domainName: elasticsearchDomain.domainEndpoint,
+            ttl: Duration.hours(1)
         });
 
         const fileSystem = new FileSystem(this, 'FileSystem', {
@@ -299,7 +345,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             zone: privateHostedZone,
             recordName: `nfs.${privateHostedZone.zoneName}`,
             domainName: `${fileSystem.fileSystemId}.efs.${this.region}.amazonaws.com`,
-            ttl: Duration.seconds(60)
+            ttl: Duration.hours(1)
         });
 
         const bastionHost = new BastionHostLinux(this, 'BastionHost', {
@@ -310,7 +356,8 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         bastionHost.instance.addUserData(`mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${fileSystemEndpointPrivateDnsRecord.domainName}:/ /mnt/efs `);
 
         const ecsCluster = new Cluster(this, 'EcsCluster', {
-            containerInsights: true
+            containerInsights: true,
+            vpc
         });
         const _ecsCluster = ecsCluster.node.defaultChild as CfnCluster;
         _ecsCluster.capacityProviders = ['FARGATE', 'FARGATE_SPOT'];
@@ -331,7 +378,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             deletionProtection: props.resourceDeletionProtection,
             http2Enabled: true,
             internetFacing: true,
-            securityGroup: applicationLoadBalancerSecurityGroup
+            securityGroup: applicationLoadBalancerSecurityGroup,
         });
         applicationLoadBalancer.setAttribute('routing.http.drop_invalid_header_fields.enabled', 'true');
         applicationLoadBalancer.setAttribute('access_logs.s3.enabled', 'true');
@@ -753,10 +800,10 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             defaultRootObject: '',
             viewerCertificate: ViewerCertificate.fromAcmCertificate(acmCertificate, {aliases: [props.hostname]}),
             webACLId: wordPressDistributionWafWebAcl.attrArn,
-            // loggingConfig:{
-            //     bucket: loggingBucket,
-            //     prefix: 'wordpress-distribution'
-            // }
+            loggingConfig: {
+                bucket: loggingBucket,
+                prefix: 'wordpress-distribution'
+            }
         });
         (wordPressDistribution.node.defaultChild as CfnDistribution).addDependsOn(wordPressDistributionWafWebAcl);
 
@@ -790,10 +837,10 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             httpVersion: HttpVersion.HTTP2,
             defaultRootObject: '',
             viewerCertificate: ViewerCertificate.fromAcmCertificate(acmCertificate, {aliases: [`static.${props.hostname}`]}),
-            // loggingConfig:{
-            //     bucket: loggingBucket,
-            //     prefix: 'static-content-distribution'
-            // }
+            loggingConfig: {
+                bucket: loggingBucket,
+                prefix: 'static-content-distribution'
+            }
         });
 
         const backupVault = new BackupVault(this, 'BackupVault', {removalPolicy: props.removalPolicy});
@@ -812,58 +859,58 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             ]
         });
 
-        // const awsConfigOnComplianceSnsTopic = new Topic(this, 'AwsConfigOnComplianceSnsTopic', {masterKey: awsManagedSnsKmsKey});
-        // props.snsEmailSubscription.forEach(email => awsConfigOnComplianceSnsTopic.addSubscription(new EmailSubscription(email)));
-        //
-        // const awsConfigManagesRules = [
-        //     new ManagedRule(this, 'AwsConfigManagedRuleVpcFlowLogsEnabled', {
-        //         identifier: 'VPC_FLOW_LOGS_ENABLED',
-        //         inputParameters: {trafficType: 'ALL'}
-        //     }),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleVpcSgOpenOnlyToAuthorizedPorts', {
-        //         identifier: 'VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS',
-        //         inputParameters: {authorizedTcpPorts: '443'}
-        //     }),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleInternetGatewayAuthorizedVpcOnly', {
-        //         identifier: 'INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY',
-        //         inputParameters: {AuthorizedVpcIds: vpc.vpcId}
-        //     }),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleAcmCertificateExpirationCheck', {
-        //         identifier: 'ACM_CERTIFICATE_EXPIRATION_CHECK',
-        //         inputParameters: {daysToExpiration: 90}
-        //     }),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleAutoScalingGroupElbHealthcheckRequired', {identifier: 'AUTOSCALING_GROUP_ELB_HEALTHCHECK_REQUIRED'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleIncomingSshDisabled', {identifier: 'INCOMING_SSH_DISABLED'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleSnsEncryptedKms', {identifier: 'SNS_ENCRYPTED_KMS'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleElbDeletionProtection', {identifier: 'ELB_DELETION_PROTECTION_ENABLED'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleElbLoggingEnabled', {
-        //         identifier: 'ELB_LOGGING_ENABLED',
-        //         inputParameters: {s3BucketNames: loggingBucket.bucketName}
-        //     }),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpDropInvalidHeaderEnabled', {identifier: 'ALB_HTTP_DROP_INVALID_HEADER_ENABLED'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpToHttpsRedirectionCheck', {identifier: 'ALB_HTTP_TO_HTTPS_REDIRECTION_CHECK'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleAlbWafEnabled', {
-        //         identifier: 'ALB_WAF_ENABLED',
-        //         inputParameters: {wafWebAclIds: applicationLoadBalancerWebAcl.attrArn}
-        //     }),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleCloudFrontOriginAccessIdentityEnabled', {identifier: 'CLOUDFRONT_ORIGIN_ACCESS_IDENTITY_ENABLED'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleCloudFrontViewerPolicyHttps', {identifier: 'CLOUDFRONT_VIEWER_POLICY_HTTPS'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleEfsInBackupPlan', {identifier: 'EFS_IN_BACKUP_PLAN'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleEfsEncryptedCheck', {identifier: 'EFS_ENCRYPTED_CHECK'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleRdsClusterDeletionProtectionEnabled', {identifier: 'RDS_CLUSTER_DELETION_PROTECTION_ENABLED'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleEdsInBackupPlan', {identifier: 'RDS_IN_BACKUP_PLAN'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleS3DefaultEncryptionKms', {identifier: 'S3_DEFAULT_ENCRYPTION_KMS'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleS3BucketPublicReadProhibited', {identifier: 'S3_BUCKET_PUBLIC_READ_PROHIBITED'}),
-        //     new ManagedRule(this, 'AwsConfigManagedRuleS3BucketPublicWriteProhibited', {identifier: 'S3_BUCKET_PUBLIC_WRITE_PROHIBITED'}),
-        // ]
-        // awsConfigManagesRules.forEach(rule => {
-        //     rule.scopeToTag('aws-config:cloudformation:stack-name', this.stackName);
-        //     rule.onComplianceChange('TopicEvent', {target: new SnsTopic(awsConfigOnComplianceSnsTopic)});
-        // });
-        //
-        // const awsConfigCloudFormationStackDriftDetectionCheckRule = new CloudFormationStackDriftDetectionCheck(this, 'AwsConfigCloudFormationStackDriftDetectionCheck', {ownStackOnly: true});
-        // awsConfigCloudFormationStackDriftDetectionCheckRule.onComplianceChange('TopicEvent', {target: new SnsTopic(awsConfigOnComplianceSnsTopic)})
-        //
+        const awsConfigOnComplianceSnsTopic = new Topic(this, 'AwsConfigOnComplianceSnsTopic', {masterKey: awsManagedSnsKmsKey});
+        props.snsEmailSubscription.forEach(email => awsConfigOnComplianceSnsTopic.addSubscription(new EmailSubscription(email)));
+
+        const awsConfigManagesRules = [
+            new ManagedRule(this, 'AwsConfigManagedRuleVpcFlowLogsEnabled', {
+                identifier: 'VPC_FLOW_LOGS_ENABLED',
+                inputParameters: {trafficType: 'ALL'}
+            }),
+            new ManagedRule(this, 'AwsConfigManagedRuleVpcSgOpenOnlyToAuthorizedPorts', {
+                identifier: 'VPC_SG_OPEN_ONLY_TO_AUTHORIZED_PORTS',
+                inputParameters: {authorizedTcpPorts: '443'}
+            }),
+            new ManagedRule(this, 'AwsConfigManagedRuleInternetGatewayAuthorizedVpcOnly', {
+                identifier: 'INTERNET_GATEWAY_AUTHORIZED_VPC_ONLY',
+                inputParameters: {AuthorizedVpcIds: vpc.vpcId}
+            }),
+            new ManagedRule(this, 'AwsConfigManagedRuleAcmCertificateExpirationCheck', {
+                identifier: 'ACM_CERTIFICATE_EXPIRATION_CHECK',
+                inputParameters: {daysToExpiration: 90}
+            }),
+            new ManagedRule(this, 'AwsConfigManagedRuleAutoScalingGroupElbHealthcheckRequired', {identifier: 'AUTOSCALING_GROUP_ELB_HEALTHCHECK_REQUIRED'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleIncomingSshDisabled', {identifier: 'INCOMING_SSH_DISABLED'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleSnsEncryptedKms', {identifier: 'SNS_ENCRYPTED_KMS'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleElbDeletionProtection', {identifier: 'ELB_DELETION_PROTECTION_ENABLED'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleElbLoggingEnabled', {
+                identifier: 'ELB_LOGGING_ENABLED',
+                inputParameters: {s3BucketNames: loggingBucket.bucketName}
+            }),
+            new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpDropInvalidHeaderEnabled', {identifier: 'ALB_HTTP_DROP_INVALID_HEADER_ENABLED'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleAlbHttpToHttpsRedirectionCheck', {identifier: 'ALB_HTTP_TO_HTTPS_REDIRECTION_CHECK'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleAlbWafEnabled', {
+                identifier: 'ALB_WAF_ENABLED',
+                inputParameters: {wafWebAclIds: applicationLoadBalancerWebAcl.attrArn}
+            }),
+            new ManagedRule(this, 'AwsConfigManagedRuleCloudFrontOriginAccessIdentityEnabled', {identifier: 'CLOUDFRONT_ORIGIN_ACCESS_IDENTITY_ENABLED'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleCloudFrontViewerPolicyHttps', {identifier: 'CLOUDFRONT_VIEWER_POLICY_HTTPS'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleEfsInBackupPlan', {identifier: 'EFS_IN_BACKUP_PLAN'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleEfsEncryptedCheck', {identifier: 'EFS_ENCRYPTED_CHECK'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleRdsClusterDeletionProtectionEnabled', {identifier: 'RDS_CLUSTER_DELETION_PROTECTION_ENABLED'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleEdsInBackupPlan', {identifier: 'RDS_IN_BACKUP_PLAN'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleS3DefaultEncryptionKms', {identifier: 'S3_DEFAULT_ENCRYPTION_KMS'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleS3BucketPublicReadProhibited', {identifier: 'S3_BUCKET_PUBLIC_READ_PROHIBITED'}),
+            new ManagedRule(this, 'AwsConfigManagedRuleS3BucketPublicWriteProhibited', {identifier: 'S3_BUCKET_PUBLIC_WRITE_PROHIBITED'}),
+        ]
+        awsConfigManagesRules.forEach(rule => {
+            rule.scopeToTag('aws-config:cloudformation:stack-name', this.stackName);
+            rule.onComplianceChange('TopicEvent', {target: new SnsTopic(awsConfigOnComplianceSnsTopic)});
+        });
+
+        const awsConfigCloudFormationStackDriftDetectionCheckRule = new CloudFormationStackDriftDetectionCheck(this, 'AwsConfigCloudFormationStackDriftDetectionCheck', {ownStackOnly: true});
+        awsConfigCloudFormationStackDriftDetectionCheckRule.onComplianceChange('TopicEvent', {target: new SnsTopic(awsConfigOnComplianceSnsTopic)})
+
         const rootDnsRecord = new ARecord(this, 'RootDnsRecord', {
             zone: publicHostedZone,
             recordName: props.hostname,
@@ -876,13 +923,6 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             target: RecordTarget.fromAlias(new CloudFrontTarget(staticContentDistribution))
         });
 
-        new HttpsRedirect(this, 'WwwRedirect', {
-            recordNames: [`www.${props.hostname}`],
-            targetDomain: props.hostname,
-            zone: publicHostedZone,
-            certificate: acmCertificate
-        });
-
         new CfnOutput(this, 'RootHostname', {
             value: rootDnsRecord.domainName
         });
@@ -891,15 +931,19 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             value: staticContentDnsRecord.domainName
         });
 
-        new CfnOutput(this, 'RdsPrivateHostname', {
+        new CfnOutput(this, 'RdsAuroraServerlessClusterPrivateHostname', {
             value: rdsAuroraClusterPrivateDnsRecord.domainName
         });
 
-        new CfnOutput(this, 'MemcachedHostname', {
+        new CfnOutput(this, 'ElastiCacheMemcachedClusterPrivateHostname', {
             value: elastiCacheMemcachedClusterPrivateDnsRecord.domainName
         });
 
-        new CfnOutput(this, 'FileSystenHostname', {
+        new CfnOutput(this, 'ElasticsearchDomainPrivateHostname', {
+            value: elasticsearchDomainPrivateDnsRecord.domainName
+        });
+
+        new CfnOutput(this, 'EfsFileSystemPrivateHostname', {
             value: fileSystemEndpointPrivateDnsRecord.domainName
         });
     }
