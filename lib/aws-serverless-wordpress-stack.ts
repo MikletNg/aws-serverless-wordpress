@@ -51,7 +51,7 @@ import {
 } from '@aws-cdk/aws-iam';
 import {RetentionDays} from '@aws-cdk/aws-logs';
 import {PredefinedMetric, ScalableTarget, ServiceNamespace} from '@aws-cdk/aws-applicationautoscaling';
-import {Alias, Key} from '@aws-cdk/aws-kms';
+import {Alias} from '@aws-cdk/aws-kms';
 import {DockerImageAsset} from "@aws-cdk/aws-ecr-assets";
 import path = require('path');
 import {
@@ -94,7 +94,6 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         super(scope, id, props);
 
         const awsManagedSnsKmsKey = Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/sns');
-        const awsManagedS3KmsKey = Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/s3');
 
         const publicHostedZone = PublicHostedZone.fromLookup(this, 'ExistingPublicHostedZone', {domainName: props.domainName});
 
@@ -105,15 +104,13 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         });
 
         const staticContentBucket = new Bucket(this, 'StaticContentBucket', {
-            encryption: BucketEncryption.KMS_MANAGED,
-            encryptionKey: awsManagedS3KmsKey,
+            encryption: BucketEncryption.S3_MANAGED,
             versioned: true,
             removalPolicy: props.removalPolicy
         });
 
         const loggingBucket = new Bucket(this, 'LoggingBucket', {
-            encryption: BucketEncryption.KMS_MANAGED,
-            encryptionKey: awsManagedS3KmsKey,
+            encryption: BucketEncryption.S3_MANAGED,
             removalPolicy: props.removalPolicy,
             lifecycleRules: [
                 {
@@ -899,7 +896,6 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             new ManagedRule(this, 'AwsConfigManagedRuleEfsEncryptedCheck', {identifier: 'EFS_ENCRYPTED_CHECK'}),
             new ManagedRule(this, 'AwsConfigManagedRuleRdsClusterDeletionProtectionEnabled', {identifier: 'RDS_CLUSTER_DELETION_PROTECTION_ENABLED'}),
             new ManagedRule(this, 'AwsConfigManagedRuleEdsInBackupPlan', {identifier: 'RDS_IN_BACKUP_PLAN'}),
-            new ManagedRule(this, 'AwsConfigManagedRuleS3DefaultEncryptionKms', {identifier: 'S3_DEFAULT_ENCRYPTION_KMS'}),
             new ManagedRule(this, 'AwsConfigManagedRuleS3BucketPublicReadProhibited', {identifier: 'S3_BUCKET_PUBLIC_READ_PROHIBITED'}),
             new ManagedRule(this, 'AwsConfigManagedRuleS3BucketPublicWriteProhibited', {identifier: 'S3_BUCKET_PUBLIC_WRITE_PROHIBITED'}),
         ]
