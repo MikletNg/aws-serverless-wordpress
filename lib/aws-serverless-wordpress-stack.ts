@@ -483,6 +483,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 streamPrefix: `${this.stackName}XRayContainerLog`,
                 logRetention: RetentionDays.ONE_MONTH
             }),
+            entryPoint: ['/usr/bin/xray', '-b', '0.0.0.0:2000', '-l', 'dev', '-o'],
             user: '1337'
         });
         xrayContainer.addPortMappings({
