@@ -1,5 +1,5 @@
 import * as cdk from '@aws-cdk/core';
-import {CfnOutput, Duration, RemovalPolicy, SecretValue} from '@aws-cdk/core';
+import {CfnOutput, Duration, RemovalPolicy, SecretValue, CfnCodeDeployBlueGreenHook, CfnTrafficRoutingType} from '@aws-cdk/core';
 import {ARecord, CnameRecord, PrivateHostedZone, PublicHostedZone, RecordTarget} from '@aws-cdk/aws-route53';
 import {Certificate, CertificateValidation} from '@aws-cdk/aws-certificatemanager';
 import {Bucket, BucketEncryption, StorageClass} from '@aws-cdk/aws-s3';
@@ -92,6 +92,12 @@ interface StackProps extends cdk.StackProps {
 export class AwsServerlessWordpressStack extends cdk.Stack {
     constructor(scope: cdk.Construct, id: string, props: StackProps) {
         super(scope, id, props);
+
+        // const hook = new CfnCodeDeployBlueGreenHook(this, 'CodeDeployBlueGreenHook', {
+        //     trafficRoutingConfig: {
+        //         t
+        //     }
+        // })
 
         const awsManagedSnsKmsKey = Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/sns');
 

@@ -23,4 +23,5 @@ const stack = new AwsServerlessWordpressStack(app, 'AwsServerlessWordpressStack'
     snsEmailSubscription: [],
     loadBalancerAccountId: '127311923021' // https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html#access-logging-bucket-permissions
 });
+stack.templateOptions.transforms = ['AWS::CodeDeployBlueGreen']
 Tags.of(stack).add('aws-config:cloudformation:stack-name', stack.stackName);
