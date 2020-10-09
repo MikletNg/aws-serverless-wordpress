@@ -3,6 +3,7 @@ import 'source-map-support/register';
 import * as cdk from '@aws-cdk/core';
 import {RemovalPolicy, Tags} from '@aws-cdk/core';
 import {AwsServerlessWordpressStack} from '../lib/aws-serverless-wordpress-stack';
+import { BlueGreenTestStack } from '../lib/blue-green-test';
 
 const app = new cdk.App();
 const stack = new AwsServerlessWordpressStack(app, 'AwsServerlessWordpressStack', {
@@ -25,3 +26,11 @@ const stack = new AwsServerlessWordpressStack(app, 'AwsServerlessWordpressStack'
 });
 stack.templateOptions.transforms = ['AWS::CodeDeployBlueGreen']
 Tags.of(stack).add('aws-config:cloudformation:stack-name', stack.stackName);
+
+const testStack = new BlueGreenTestStack(app, 'BlueGreenTestStack', {
+    env:{
+        account: '751225572132',
+        region: 'us-east-1'
+    }
+});
+testStack.templateOptions.transforms = ['AWS::CodeDeployBlueGreen']
