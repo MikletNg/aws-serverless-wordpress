@@ -493,21 +493,6 @@
     "@aws-cdk/core" "1.66.0"
     constructs "^3.0.4"
 
-"@aws-cdk/aws-route53-patterns@1.66.0":
-  version "1.66.0"
-  resolved "https://registry.yarnpkg.com/@aws-cdk/aws-route53-patterns/-/aws-route53-patterns-1.66.0.tgz#12f08b212218b90903da374e0400b9615e4f47ee"
-  integrity sha512-RoVLoOMeZlXY2792Zhc8VOmqoDxGqt8maGtvWVvC9Pb5/Pc/2H5faaN9ueLr2Y79dFJa9Z1Sq42rKV41FKev4w==
-  dependencies:
-    "@aws-cdk/aws-certificatemanager" "1.66.0"
-    "@aws-cdk/aws-cloudfront" "1.66.0"
-    "@aws-cdk/aws-iam" "1.66.0"
-    "@aws-cdk/aws-route53" "1.66.0"
-    "@aws-cdk/aws-route53-targets" "1.66.0"
-    "@aws-cdk/aws-s3" "1.66.0"
-    "@aws-cdk/core" "1.66.0"
-    "@aws-cdk/region-info" "1.66.0"
-    constructs "^3.0.4"
-
 "@aws-cdk/aws-route53-targets@1.66.0":
   version "1.66.0"
   resolved "https://registry.yarnpkg.com/@aws-cdk/aws-route53-targets/-/aws-route53-targets-1.66.0.tgz#757c908611eb76f28bb49ab3d13869b81b134dc4"

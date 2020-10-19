@@ -11,16 +11,18 @@ const stack = new AwsServerlessWordpressStack(app, 'AwsServerlessWordpressStack'
     removalPolicy: RemovalPolicy.DESTROY,
     env: {
         region: 'us-east-1',
-        account: '751225572132'
+        account: 'YOUR_AWS_ACCOUNT_ID'
     },
     databaseCredential: {
         username: 'wordpress',
         defaultDatabaseName: 'wordpress'
     },
-    domainName: 'blog.miklet.pro',
-    hostname: 'blog.miklet.pro',
-    alternativeHostname: ['*.blog.miklet.pro'],
+    domainName: 'blog.example.com',
+    hostname: 'blog.example.com',
+    alternativeHostname: ['*.blog.example.com'],
     snsEmailSubscription: [],
-    loadBalancerAccountId: '127311923021' // https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html#access-logging-bucket-permissions
+    // This load balancer account ID should not be change if you deploy in us-east-1
+    // https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-access-logs.html#access-logging-bucket-permissions
+    loadBalancerAccountId: '127311923021'
 });
 Tags.of(stack).add('aws-config:cloudformation:stack-name', stack.stackName);
