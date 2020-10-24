@@ -12,20 +12,43 @@ This CDK project attempt to use serverless services on AWS to deploy a high ava
 ![Architecture Diagram](doc/architecture-diagram.png)
 
 ## Deployment
+### Before getting started
+Please make sure you have/are
+- Using bash
+- Node.js installed
+- NPM and Yarn installed
+- Installed and running Docker
+- Installed and configured AWS CLI
+- Installed the latest version of AWS CDK CLI
+
 *Please be notice, this stack only can deploy into us-east-1*
-0. Install Docker
-1. Install AWS CLI
-2. Configure AWS profile through AWS CLI
-3. Install the latest version of AWS CDK CLI
-4. Deploy the CDK Toolkit stack on to the target region.
-5. Initialize the CDK project, run `make init`
-6. Modify the configuration in `bin/aws-serverless-wordpress.ts`
+1. Initialize the CDK project, run `make init`
+2. Deploy the CDK Toolkit stack on to the target region, run `npx bootstrap aws://AWS_ACCOUNT_ID/AWS_REGION --profile AWS_PROFILE_NAME`
+3. Copy the `config.sample.toml` and rename to `config.toml`
+4. Modify the configuration in `config.toml`
+    ```toml
+   [environment]
+   account = "YOUR_AWS_ACCOUNT_ID" # Your AWS account ID
+   
+   [admin]
+   allowIpAddresses = ["0.0.0.0/0"] #Your public IPv4 address
+   
+   [database]
+   username = "wordpress" #Database username
+   defaultDatabaseName = "wordpress" #Default database name
+   
+   [domain]
+   domainName = "example.com" #Your root domain name, useually is the domain name of the created public hosted zone in Route 53
+   hostname = "blog.example.com" #Your desire hostname for the WordPress
+   alternativeHostname = ["*.blog.example.com"]
+   
+   [contact]
+   email = ["hello@blog.example.com"] #Email address for notify any in-compliance event in AWS Config
+    ```
 7. Run `make deploy profile=YOUR_AWS_PROFILE_NAME`
 8. After the CloudFormation stack deployed, open the Session Manager in System Manager, and open a session to the created bastion host. Then run the following command. (The version of WordPress plugin may NOT be latest)
     ```shell script
     sudo su -
-    mkdir -p /mnt/efs &&\
-    mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport nfs.blog.miklet.pro.private:/ /mnt/efs &&\
     cd /mnt/efs/wp-content/plugins &&\
     curl -O https://downloads.wordpress.org/plugin/w3-total-cache.0.15.1.zip &&\
     curl -O https://downloads.wordpress.org/plugin/wp-ses.1.4.3.zip &&\

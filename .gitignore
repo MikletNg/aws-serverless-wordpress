@@ -14,3 +14,5 @@ cdk.out
 env/
 .idea/
 .vscode/
+
+bin/config.toml

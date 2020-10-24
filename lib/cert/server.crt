@@ -1,0 +1,87 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            7b:40:19:9e:c2:f2:ee:8d:95:23:b2:3d:c6:e3:84:69
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: CN=blog.miklet.pro
+        Validity
+            Not Before: Oct 23 20:22:39 2020 GMT
+            Not After : Jan 26 20:22:39 2023 GMT
+        Subject: CN=server
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                RSA Public-Key: (2048 bit)
+                Modulus:
+                    00:bf:33:6c:84:da:63:2f:91:db:9f:7a:89:9d:9c:
+                    af:2d:de:41:67:b2:52:58:ce:c1:4c:20:41:ee:2b:
+                    c7:0f:06:61:e2:fb:f9:da:e8:d9:02:ae:aa:aa:46:
+                    cd:49:ea:f8:7b:dc:60:a8:63:d8:ac:63:a9:3d:b8:
+                    b7:7b:12:98:86:e3:46:53:fd:d9:a0:55:be:ec:69:
+                    6c:65:98:bc:b1:dc:a1:96:5b:20:ff:27:86:95:49:
+                    e0:27:3d:7f:e2:d8:d7:47:b3:19:ef:90:d6:d1:40:
+                    8e:71:99:27:82:67:8b:35:cb:68:d0:54:a5:6e:90:
+                    cf:37:f9:b7:82:8c:9c:70:50:b0:38:34:19:b3:60:
+                    d8:b5:2a:07:d6:58:88:9a:28:7e:91:0b:69:4f:0b:
+                    59:c8:56:97:59:2d:66:d6:73:44:ca:91:e3:89:0d:
+                    66:07:b6:16:4b:cf:9e:d1:7f:52:fa:79:ca:4f:29:
+                    61:3d:65:05:94:fd:a4:04:60:81:01:a5:42:3a:a9:
+                    bc:36:3a:7c:ac:db:7d:02:a0:11:99:3e:6b:a7:eb:
+                    86:3a:79:f2:ac:63:4e:53:a1:5a:f1:79:d2:76:96:
+                    e8:29:2f:3e:3d:43:58:af:51:4e:f3:42:70:f5:9e:
+                    84:6c:d0:22:79:5d:9d:9f:eb:18:7c:25:4a:bb:55:
+                    5c:65
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Basic Constraints: 
+                CA:FALSE
+            X509v3 Subject Key Identifier: 
+                7A:DB:FA:C1:A1:99:8B:E9:BE:CC:D0:A1:08:BA:F4:79:C2:38:2F:1D
+            X509v3 Authority Key Identifier: 
+                keyid:02:6D:A4:8B:06:5E:EB:EF:66:E2:B7:E4:6E:60:62:59:C9:BC:7F:F3
+                DirName:/CN=blog.miklet.pro
+                serial:73:D1:11:F1:38:C8:09:B5:8A:CF:45:9A:9A:22:A2:73:C7:11:5C:9C
+
+            X509v3 Extended Key Usage: 
+                TLS Web Server Authentication
+            X509v3 Key Usage: 
+                Digital Signature, Key Encipherment
+            X509v3 Subject Alternative Name: 
+                DNS:server
+    Signature Algorithm: sha256WithRSAEncryption
+         07:b5:28:35:7f:3d:d9:fd:8d:30:0a:b8:8f:93:43:da:8a:fe:
+         49:e8:11:87:9e:65:0c:c0:f4:64:9a:26:c4:4d:5f:b7:10:e4:
+         24:a9:5b:9a:f3:53:46:be:6c:54:3d:2d:0f:3b:93:e1:d1:73:
+         3a:f7:59:2e:17:dc:97:01:da:60:a1:8a:c1:e7:55:fd:81:ce:
+         6b:af:fc:da:71:74:13:6a:42:0c:62:ac:de:4f:a7:d9:4a:9d:
+         fc:ed:15:4e:f4:8f:89:09:c6:ad:ff:da:51:cf:b3:9b:54:49:
+         c3:6b:f8:d5:d0:23:d2:48:d9:65:0f:1b:75:d3:d7:81:8d:6a:
+         c0:0a:30:b9:1e:08:15:9c:b9:f8:2c:fd:40:8a:3d:b1:c5:49:
+         a2:da:01:92:be:91:2d:15:89:d2:8f:b4:6e:dd:8f:42:82:fe:
+         3a:d8:9a:8d:cf:c0:10:08:41:e0:ea:a3:fa:9c:0f:d8:10:31:
+         30:2b:97:ec:d1:2b:40:78:00:3d:4f:8e:48:df:b0:0c:82:aa:
+         8d:bc:01:10:6e:44:4f:57:cc:a6:38:ed:36:f9:c0:c8:74:c2:
+         c5:9a:b5:75:bd:b8:05:52:03:37:2c:e1:5c:f1:b4:8d:00:b2:
+         df:32:63:db:54:99:32:4c:3e:39:b8:30:88:64:fd:5d:90:68:
+         a0:87:ed:b7
+-----BEGIN CERTIFICATE-----
+MIIDbzCCAlegAwIBAgIQe0AZnsLy7o2VI7I9xuOEaTANBgkqhkiG9w0BAQsFADAa
+MRgwFgYDVQQDDA9ibG9nLm1pa2xldC5wcm8wHhcNMjAxMDIzMjAyMjM5WhcNMjMw
+MTI2MjAyMjM5WjARMQ8wDQYDVQQDDAZzZXJ2ZXIwggEiMA0GCSqGSIb3DQEBAQUA
+A4IBDwAwggEKAoIBAQC/M2yE2mMvkdufeomdnK8t3kFnslJYzsFMIEHuK8cPBmHi
++/na6NkCrqqqRs1J6vh73GCoY9isY6k9uLd7EpiG40ZT/dmgVb7saWxlmLyx3KGW
+WyD/J4aVSeAnPX/i2NdHsxnvkNbRQI5xmSeCZ4s1y2jQVKVukM83+beCjJxwULA4
+NBmzYNi1KgfWWIiaKH6RC2lPC1nIVpdZLWbWc0TKkeOJDWYHthZLz57Rf1L6ecpP
+KWE9ZQWU/aQEYIEBpUI6qbw2Onys230CoBGZPmun64Y6efKsY05ToVrxedJ2lugp
+Lz49Q1ivUU7zQnD1noRs0CJ5XZ2f6xh8JUq7VVxlAgMBAAGjgbkwgbYwCQYDVR0T
+BAIwADAdBgNVHQ4EFgQUetv6waGZi+m+zNChCLr0ecI4Lx0wVQYDVR0jBE4wTIAU
+Am2kiwZe6+9m4rfkbmBiWcm8f/OhHqQcMBoxGDAWBgNVBAMMD2Jsb2cubWlrbGV0
+LnByb4IUc9ER8TjICbWKz0WamiKic8cRXJwwEwYDVR0lBAwwCgYIKwYBBQUHAwEw
+CwYDVR0PBAQDAgWgMBEGA1UdEQQKMAiCBnNlcnZlcjANBgkqhkiG9w0BAQsFAAOC
+AQEAB7UoNX892f2NMAq4j5ND2or+SegRh55lDMD0ZJomxE1ftxDkJKlbmvNTRr5s
+VD0tDzuT4dFzOvdZLhfclwHaYKGKwedV/YHOa6/82nF0E2pCDGKs3k+n2Uqd/O0V
+TvSPiQnGrf/aUc+zm1RJw2v41dAj0kjZZQ8bddPXgY1qwAowuR4IFZy5+Cz9QIo9
+scVJotoBkr6RLRWJ0o+0bt2PQoL+Otiajc/AEAhB4Oqj+pwP2BAxMCuX7NErQHgA
+PU+OSN+wDIKqjbwBEG5ET1fMpjjtNvnAyHTCxZq1db24BVIDNyzhXPG0jQCy3zJj
+21SZMkw+ObgwiGT9XZBooIfttw==
+-----END CERTIFICATE-----
