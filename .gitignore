@@ -16,3 +16,4 @@ env/
 .vscode/
 
 bin/config.toml
+lib/cert

@@ -1,5 +1,13 @@
 import * as cdk from '@aws-cdk/core';
-import {CfnOutput, Duration, RemovalPolicy, SecretValue} from '@aws-cdk/core';
+import {
+    CfnOutput,
+    CustomResource,
+    CustomResourceProvider,
+    CustomResourceProviderRuntime,
+    Duration,
+    RemovalPolicy,
+    SecretValue
+} from '@aws-cdk/core';
 import {ARecord, CnameRecord, PrivateHostedZone, PublicHostedZone, RecordTarget} from '@aws-cdk/aws-route53';
 import {Certificate, CertificateValidation} from '@aws-cdk/aws-certificatemanager';
 import {Bucket, BucketEncryption, StorageClass} from '@aws-cdk/aws-s3';
@@ -7,7 +15,11 @@ import {
     AclCidr,
     AclTraffic,
     Action,
-    BastionHostLinux, CfnClientVpnEndpoint, CfnClientVpnRoute, CfnClientVpnTargetNetworkAssociation,
+    BastionHostLinux,
+    CfnClientVpnAuthorizationRule,
+    CfnClientVpnEndpoint,
+    CfnClientVpnRoute,
+    CfnClientVpnTargetNetworkAssociation,
     CfnFlowLog,
     NetworkAcl,
     Peer,
@@ -41,7 +53,8 @@ import {
 } from '@aws-cdk/aws-elasticloadbalancingv2';
 import {
     AccountRootPrincipal,
-    ArnPrincipal, CfnServiceLinkedRole,
+    ArnPrincipal,
+    CfnServiceLinkedRole,
     ManagedPolicy,
     PolicyDocument,
     PolicyStatement,
@@ -52,12 +65,14 @@ import {RetentionDays} from '@aws-cdk/aws-logs';
 import {PredefinedMetric, ScalableTarget, ServiceNamespace} from '@aws-cdk/aws-applicationautoscaling';
 import {Alias} from '@aws-cdk/aws-kms';
 import {DockerImageAsset} from "@aws-cdk/aws-ecr-assets";
-import path = require('path');
 import {
     CfnDistribution,
     CloudFrontAllowedCachedMethods,
-    CloudFrontAllowedMethods, CloudFrontWebDistribution,
-    HttpVersion, OriginAccessIdentity, OriginProtocolPolicy,
+    CloudFrontAllowedMethods,
+    CloudFrontWebDistribution,
+    HttpVersion,
+    OriginAccessIdentity,
+    OriginProtocolPolicy,
     PriceClass,
     ViewerCertificate,
     ViewerProtocolPolicy
@@ -69,7 +84,8 @@ import {CfnDomain, Domain, ElasticsearchVersion} from "@aws-cdk/aws-elasticsearc
 import {SnsTopic} from "@aws-cdk/aws-events-targets";
 import {
     CfnConfigRule,
-    CfnConfigurationRecorder, CfnDeliveryChannel,
+    CfnConfigurationRecorder,
+    CfnDeliveryChannel,
     CloudFormationStackDriftDetectionCheck,
     ManagedRule,
     RuleScope
@@ -77,6 +93,7 @@ import {
 import {EmailSubscription} from "@aws-cdk/aws-sns-subscriptions";
 import {Topic} from "@aws-cdk/aws-sns";
 import {CfnGroup} from "@aws-cdk/aws-resourcegroups";
+import path = require('path');
 
 interface IDatabaseCredential {
     username: string
@@ -109,7 +126,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         if (!props.cloudFrontHashHeader) props.cloudFrontHashHeader = Buffer.from(`${this.stackName}.${props.domainName}`).toString('base64');
 
         const globalTagKey = 'aws-config:cloudformation:stack-name';
-        const globalTagValue = this.stackName;
+        const globalTagValue = Buffer.from(this.stackName).toString('base64');
 
         const awsManagedSnsKmsKey = Alias.fromAliasName(this, 'AwsManagedSnsKmsKey', 'alias/aws/sns');
 
@@ -166,7 +183,6 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             actions: ['s3:GetBucketAcl'],
             resources: [loggingBucket.bucketArn],
         }));
-
         loggingBucket.addToResourcePolicy(new PolicyStatement({
             principals: [new ArnPrincipal(`arn:aws:iam::${props.loadBalancerAccountId}:root`)],
             actions: ['s3:PutObject'],
@@ -181,6 +197,25 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             actions: ['s3:GetBucketAcl', 's3:PutBucketAcl'],
             resources: [loggingBucket.bucketArn]
         }));
+
+        if (props.removalPolicy === RemovalPolicy.DESTROY) {
+            const serviceToken = CustomResourceProvider.getOrCreate(this, 'Custom::EmptyLoggingBucket', {
+                codeDirectory: path.join(__dirname, 'custom-resource'),
+                runtime: CustomResourceProviderRuntime.NODEJS_12,
+                timeout: Duration.minutes(3),
+                policyStatements: [(new PolicyStatement({
+                    actions: ['s3:ListBucket', 's3:DeleteObject'],
+                    resources: [loggingBucket.bucketArn, `${loggingBucket.bucketArn}/*`]
+                })).toStatementJson()],
+                environment: {
+                    LOGGING_BUCKET_NAME: loggingBucket.bucketName
+                }
+            });
+            new CustomResource(this, 'EmptyLoggingBucket', {
+                resourceType: 'Custom::EmptyLoggingBucket',
+                serviceToken
+            });
+        }
 
         const vpc = new Vpc(this, 'Vpc', {
             natGateways: 3,
@@ -261,6 +296,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         applicationLoadBalancerSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(443));
         vpnApplicationLoadBalancerSecurityGroup.addIngressRule(clientVpnSecurityGroup, Port.tcp(443));
         ecsFargateServiceSecurityGroup.addIngressRule(applicationLoadBalancerSecurityGroup, Port.tcp(80));
+        ecsFargateServiceSecurityGroup.addIngressRule(vpnApplicationLoadBalancerSecurityGroup, Port.tcp(80));
         elastiCacheMemcachedSecurityGroup.addIngressRule(ecsFargateServiceSecurityGroup, Port.tcp(11211));
         rdsAuroraClusterSecurityGroup.addIngressRule(ecsFargateServiceSecurityGroup, Port.tcp(3306));
         efsFileSystemSecurityGroup.addIngressRule(ecsFargateServiceSecurityGroup, Port.tcp(2049));
@@ -296,6 +332,16 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 targetVpcSubnetId: subnet.subnetId
             });
             _vpnPublicRoute.addDependsOn(_vpnTargetNetworkAssociation);
+        });
+        new CfnClientVpnAuthorizationRule(this, 'ClientVpnAuthorizationRuleForInternetAccess', {
+            clientVpnEndpointId: clientVpn.ref,
+            authorizeAllGroups: true,
+            targetNetworkCidr: '0.0.0.0/0'
+        });
+        new CfnClientVpnAuthorizationRule(this, 'ClientVpnAuthorizationRuleForVpcAccess', {
+            clientVpnEndpointId: clientVpn.ref,
+            authorizeAllGroups: true,
+            targetNetworkCidr: vpc.vpcCidrBlock
         });
 
         const rdsAuroraClusterPasswordSecret = new Secret(this, 'RdsAuroraClusterPasswordSecret', {
@@ -437,6 +483,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             http2Enabled: true,
             internetFacing: true,
             securityGroup: applicationLoadBalancerSecurityGroup,
+            vpcSubnets: {subnetType: SubnetType.PUBLIC}
         });
         applicationLoadBalancer.setAttribute('routing.http.drop_invalid_header_fields.enabled', 'true');
         applicationLoadBalancer.setAttribute('access_logs.s3.enabled', 'true');
@@ -454,35 +501,13 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             certificates: [acmCertificate]
         });
 
-        const adminApplicationLoadBalancer = new ApplicationLoadBalancer(this, 'AdminApplicationLoadBalancer', {
-            vpc,
-            deletionProtection: props.resourceDeletionProtection,
-            http2Enabled: true,
-            internetFacing: true,
-            securityGroup: applicationLoadBalancerSecurityGroup,
-        });
-        adminApplicationLoadBalancer.setAttribute('routing.http.drop_invalid_header_fields.enabled', 'true');
-        adminApplicationLoadBalancer.setAttribute('access_logs.s3.enabled', 'true');
-        adminApplicationLoadBalancer.setAttribute('access_logs.s3.bucket', loggingBucket.bucketName);
-        adminApplicationLoadBalancer.setAttribute('access_logs.s3.prefix', 'admin-application-load-balancer');
-        adminApplicationLoadBalancer.addListener('AdminHttpListener', {
-            port: 80,
-            protocol: ApplicationProtocol.HTTP,
-            defaultAction: ListenerAction.redirect({protocol: 'HTTPS', port: '443'})
-        });
-
-        const adminHttpsListener = adminApplicationLoadBalancer.addListener('AdminHttpsListener', {
-            port: 443,
-            protocol: ApplicationProtocol.HTTPS,
-            certificates: [acmCertificate]
-        });
-
         const vpnAdminApplicationLoadBalancer = new ApplicationLoadBalancer(this, 'VpnAdminApplicationLoadBalancer', {
             vpc,
             deletionProtection: props.resourceDeletionProtection,
             http2Enabled: true,
             internetFacing: false,
             securityGroup: vpnApplicationLoadBalancerSecurityGroup,
+            vpcSubnets: {subnetType: SubnetType.PRIVATE}
         });
         vpnAdminApplicationLoadBalancer.setAttribute('routing.http.drop_invalid_header_fields.enabled', 'true');
         vpnAdminApplicationLoadBalancer.setAttribute('access_logs.s3.enabled', 'true');
@@ -631,39 +656,6 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         });
         httpsListener.addTargetGroups('WordPress', {targetGroups: [wordPressFargateServiceTargetGroup]});
 
-        const _wordPressAdminFargateServiceTargetGroup = new CfnTargetGroup(this, 'CfnWordPressAdminFargateServiceTargetGroup', {
-            matcher: {
-                httpCode: '200,301,302'
-            },
-            port: 80,
-            protocol: 'HTTP',
-            targetGroupAttributes: [
-                {
-                    key: 'stickiness.enabled',
-                    value: 'true'
-                },
-                {
-                    key: 'stickiness.type',
-                    value: 'lb_cookie'
-                },
-                {
-                    key: 'stickiness.lb_cookie.duration_seconds',
-                    value: '604800'
-                }
-            ],
-            targetType: 'ip',
-            vpcId: vpc.vpcId,
-            unhealthyThresholdCount: 5,
-            healthCheckTimeoutSeconds: 45,
-            healthCheckIntervalSeconds: 60,
-        });
-
-        const wordPressAdminFargateServiceTargetGroup = ApplicationTargetGroup.fromTargetGroupAttributes(this, 'WordPressAdminFargateServiceTargetGroup', {
-            loadBalancerArns: adminApplicationLoadBalancer.loadBalancerArn,
-            targetGroupArn: _wordPressAdminFargateServiceTargetGroup.ref
-        });
-        adminHttpsListener.addTargetGroups('WordPressAdmin', {targetGroups: [wordPressAdminFargateServiceTargetGroup]});
-
         const _wordPressVpnAdminFargateServiceTargetGroup = new CfnTargetGroup(this, 'CfnWordPressVpnAdminFargateServiceTargetGroup', {
             matcher: {
                 httpCode: '200,301,302'
@@ -717,11 +709,6 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 {
                     containerName: nginxContainer.containerName,
                     containerPort: 80,
-                    targetGroupArn: wordPressAdminFargateServiceTargetGroup.targetGroupArn
-                },
-                {
-                    containerName: nginxContainer.containerName,
-                    containerPort: 80,
                     targetGroupArn: wordPressVpnAdminFargateServiceTargetGroup.targetGroupArn
                 }
             ],
@@ -737,7 +724,6 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
         });
         _wordPressFargateService.addOverride('DependsOn', [
             this.getLogicalId(httpsListener.node.defaultChild as CfnListener),
-            this.getLogicalId(adminHttpsListener.node.defaultChild as CfnListener),
             this.getLogicalId(vpnAdminHttpsListener.node.defaultChild as CfnListener)
         ]);
 
@@ -773,27 +759,27 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 metricName: 'CloudFrontDistributionWebAclMetric'
             },
             rules: [
-                {
-                    name: 'RuleForDenyingAdminPagesAccess',
-                    priority: 0,
-                    action: {block: {}},
-                    visibilityConfig: {
-                        sampledRequestsEnabled: true,
-                        cloudWatchMetricsEnabled: true,
-                        metricName: 'AdminPagesDeniedMetric'
-                    },
-                    statement: {
-                        byteMatchStatement: {
-                            fieldToMatch: {uriPath: {}},
-                            positionalConstraint: "STARTS_WITH",
-                            searchString: '/wp-admin',
-                            textTransformations: [{type: 'NONE', priority: 0}]
-                        }
-                    }
-                },
+                // {
+                //     name: 'RuleForDenyingAnonymousToAdminPagesAccess',
+                //     priority: 0,
+                //     action: {block: {}},
+                //     visibilityConfig: {
+                //         sampledRequestsEnabled: true,
+                //         cloudWatchMetricsEnabled: true,
+                //         metricName: 'AnonymousToAdminPagesDeniedMetric'
+                //     },
+                //     statement: {
+                //         byteMatchStatement: {
+                //             fieldToMatch: {uriPath: {}},
+                //             positionalConstraint: "STARTS_WITH",
+                //             searchString: '/wp-admin',
+                //             textTransformations: [{type: 'NONE', priority: 0}]
+                //         }
+                //     }
+                // },
                 {
                     name: 'RuleWithAWSManagedRulesCommonRuleSet',
-                    priority: 1,
+                    priority: 0,
                     overrideAction: {none: {}},
                     visibilityConfig: {
                         sampledRequestsEnabled: true,
@@ -810,7 +796,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 },
                 {
                     name: 'RuleWithAWSManagedRulesKnownBadInputsRuleSet',
-                    priority: 2,
+                    priority: 1,
                     overrideAction: {none: {}},
                     visibilityConfig: {
                         sampledRequestsEnabled: true,
@@ -827,7 +813,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 },
                 {
                     name: 'RuleWithAWSManagedRulesWordPressRuleSet',
-                    priority: 3,
+                    priority: 2,
                     overrideAction: {none: {}},
                     visibilityConfig: {
                         sampledRequestsEnabled: true,
@@ -844,7 +830,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 },
                 {
                     name: 'RuleWithAWSManagedRulesPHPRuleSet',
-                    priority: 4,
+                    priority: 3,
                     overrideAction: {none: {}},
                     visibilityConfig: {
                         sampledRequestsEnabled: true,
@@ -861,7 +847,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 },
                 {
                     name: 'RuleWithAWSManagedRulesSQLiRuleSet',
-                    priority: 5,
+                    priority: 4,
                     overrideAction: {none: {}},
                     visibilityConfig: {
                         sampledRequestsEnabled: true,
@@ -878,7 +864,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 },
                 {
                     name: 'RuleWithAWSManagedRulesAmazonIpReputationList',
-                    priority: 6,
+                    priority: 5,
                     overrideAction: {none: {}},
                     visibilityConfig: {
                         sampledRequestsEnabled: true,
@@ -896,6 +882,12 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             ]
         });
 
+        const adminWhitelistIpSet = new CfnIPSet(this, 'AdminWhitelistIpSet', {
+            addresses: [...props.whitelistIpAddress],
+            scope: 'REGIONAL',
+            ipAddressVersion: 'IPV4'
+        });
+
         const applicationLoadBalancerWebAcl = new CfnWebACL(this, 'ApplicationLoadBalancerWafWebAcl', {
             defaultAction: {block: {}},
             scope: 'REGIONAL',
@@ -903,6 +895,75 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                 sampledRequestsEnabled: true,
                 cloudWatchMetricsEnabled: true,
                 metricName: 'ApplicationLoadBalancerWebAclMetric'
+            },
+            rules: [
+                {
+                    name: 'RuleWithOnlyAllowRequestFromWhitelistedIpSourceToAdminPage',
+                    priority: 0,
+                    action: {allow: {}},
+                    visibilityConfig: {
+                        sampledRequestsEnabled: true,
+                        cloudWatchMetricsEnabled: true,
+                        metricName: 'OnlyAllowRequestFromWhitelistedIpSourceMetric'
+                    },
+                    statement: {
+                        andStatement: {
+                            statements: [
+                                {
+                                    ipSetReferenceStatement: {
+                                        arn: adminWhitelistIpSet.attrArn
+                                    }
+                                },
+                                {
+                                    byteMatchStatement: {
+                                        fieldToMatch: {uriPath: {}},
+                                        positionalConstraint: "STARTS_WITH",
+                                        searchString: '/wp-admin',
+                                        textTransformations: [{type: 'NONE', priority: 0}]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    name: 'RuleWithOnlyAllowRequestFromCloudFront',
+                    priority: 1,
+                    action: {allow: {}},
+                    visibilityConfig: {
+                        sampledRequestsEnabled: true,
+                        cloudWatchMetricsEnabled: true,
+                        metricName: 'OnlyAllowRequestFromCloudFrontMetric'
+                    },
+                    statement: {
+                        byteMatchStatement: {
+                            fieldToMatch: {
+                                singleHeader: {
+                                    Name: 'X-Request-From-CloudFront'
+                                }
+                            },
+                            positionalConstraint: 'EXACTLY',
+                            searchString: props.cloudFrontHashHeader,
+                            textTransformations: [{type: 'NONE', priority: 0}]
+                        }
+                    }
+                }
+            ]
+        });
+        applicationLoadBalancerWebAcl.addDependsOn(adminWhitelistIpSet);
+
+        new CfnWebACLAssociation(this, 'ApplicationLoadBalancerWafWebAclAssociation', {
+            resourceArn: applicationLoadBalancer.loadBalancerArn,
+            webAclArn: applicationLoadBalancerWebAcl.attrArn
+        });
+
+        const vpnAdminApplicationLoadBalancerWebAcl = new CfnWebACL(this, 'VpnAdminApplicationLoadBalancerWafWebAcl', {
+            defaultAction: {block: {}},
+            scope: 'REGIONAL',
+            visibilityConfig: {
+                sampledRequestsEnabled: true,
+                cloudWatchMetricsEnabled: true,
+                metricName: 'VpnAdminApplicationLoadBalancerWebAclMetric'
             },
             rules: [
                 {
@@ -923,59 +984,16 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                             },
                             positionalConstraint: 'EXACTLY',
                             searchString: props.cloudFrontHashHeader,
-                            textTransformations: [
-                                {
-                                    type: 'NONE',
-                                    priority: 0
-                                }
-                            ]
+                            textTransformations: [{type: 'NONE', priority: 0}]
                         }
                     }
                 }
             ]
         });
 
-        new CfnWebACLAssociation(this, 'ApplicationLoadBalancerWafWebAclAssociation', {
-            resourceArn: applicationLoadBalancer.loadBalancerArn,
-            webAclArn: applicationLoadBalancerWebAcl.attrArn
-        });
-
-        const adminWhitelistIpSet = new CfnIPSet(this, 'AdminWhitelistIpSet', {
-            addresses: [...props.whitelistIpAddress],
-            scope: 'REGIONAL',
-            ipAddressVersion: 'IPV4'
-        });
-
-        const adminApplicationLoadBalancerWebAcl = new CfnWebACL(this, 'AdminApplicationLoadBalancerWafWebAcl', {
-            defaultAction: {block: {}},
-            scope: 'REGIONAL',
-            visibilityConfig: {
-                sampledRequestsEnabled: true,
-                cloudWatchMetricsEnabled: true,
-                metricName: 'AdminApplicationLoadBalancerWebAclMetric'
-            },
-            rules: [
-                {
-                    name: 'RuleWithOnlyAllowRequestFromWhitelistedIpSource',
-                    priority: 0,
-                    action: {allow: {}},
-                    visibilityConfig: {
-                        sampledRequestsEnabled: true,
-                        cloudWatchMetricsEnabled: true,
-                        metricName: 'OnlyAllowRequestFromWhitelistedIpSourceMetric'
-                    },
-                    statement: {
-                        ipSetReferenceStatement: {
-                            arn: adminWhitelistIpSet.attrArn
-                        }
-                    }
-                }
-            ]
-        });
-
-        new CfnWebACLAssociation(this, 'AdminApplicationLoadBalancerWafWebAclAssociation', {
-            resourceArn: adminApplicationLoadBalancer.loadBalancerArn,
-            webAclArn: adminApplicationLoadBalancerWebAcl.attrArn
+        new CfnWebACLAssociation(this, 'VpnAdminApplicationLoadBalancerWafWebAclAssociation', {
+            resourceArn: vpnAdminApplicationLoadBalancer.loadBalancerArn,
+            webAclArn: vpnAdminApplicationLoadBalancerWebAcl.attrArn
         });
 
         const wordPressDistribution = new CloudFrontWebDistribution(this, 'WordPressDistribution', {
@@ -1014,18 +1032,6 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                             allowedMethods: CloudFrontAllowedMethods.ALL
                         },
                         {
-                            pathPattern: 'wp-admin/*',
-                            forwardedValues: {
-                                queryString: true,
-                                cookies: {
-                                    forward: 'all'
-                                },
-                                headers: ['*']
-                            },
-                            cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD_OPTIONS,
-                            allowedMethods: CloudFrontAllowedMethods.ALL
-                        },
-                        {
                             pathPattern: 'wp-login.php',
                             forwardedValues: {
                                 queryString: true,
@@ -1037,6 +1043,29 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                             cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD_OPTIONS,
                             allowedMethods: CloudFrontAllowedMethods.ALL
                         }
+                    ]
+                }, {
+                    customOriginSource: {
+                        domainName: vpnAdminApplicationLoadBalancer.loadBalancerDnsName,
+                        originProtocolPolicy: OriginProtocolPolicy.HTTPS_ONLY,
+                        originReadTimeout: Duration.minutes(1),
+                        originHeaders: {
+                            'X-Request-From-CloudFront': props.cloudFrontHashHeader
+                        }
+                    },
+                    behaviors: [
+                        {
+                            pathPattern: 'wp-admin/*',
+                            forwardedValues: {
+                                queryString: true,
+                                cookies: {
+                                    forward: 'all'
+                                },
+                                headers: ['*']
+                            },
+                            cachedMethods: CloudFrontAllowedCachedMethods.GET_HEAD_OPTIONS,
+                            allowedMethods: CloudFrontAllowedMethods.ALL
+                        },
                     ]
                 }
             ],
@@ -1266,18 +1295,6 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
             target: RecordTarget.fromAlias(new CloudFrontTarget(wordPressDistribution))
         });
 
-        const adminDnsRecord = new ARecord(this, 'AdminDnsRecord', {
-            zone: publicHostedZone,
-            recordName: `admin.${props.hostname}`,
-            target: RecordTarget.fromAlias(new LoadBalancerTarget(adminApplicationLoadBalancer))
-        });
-
-        const vpnAdminDnsRecord = new ARecord(this, 'VpnAdminDnsRecord', {
-            zone: publicHostedZone,
-            recordName: `_admin.${props.hostname}`,
-            target: RecordTarget.fromAlias(new LoadBalancerTarget(vpnAdminApplicationLoadBalancer))
-        });
-
         const staticContentDnsRecord = new ARecord(this, 'StaticContentDnsRecord', {
             zone: publicHostedZone,
             recordName: `static.${props.hostname}`,
@@ -1286,14 +1303,6 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
 
         new CfnOutput(this, 'RootHostname', {
             value: rootDnsRecord.domainName
-        });
-
-        new CfnOutput(this, 'AdminHostname', {
-            value: adminDnsRecord.domainName
-        });
-
-        new CfnOutput(this, 'VpnAdminHostname', {
-            value: vpnAdminDnsRecord.domainName
         });
 
         new CfnOutput(this, 'StaticContentHostname', {

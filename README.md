@@ -33,6 +33,10 @@ Please make sure you have/are
    [admin]
    allowIpAddresses = ["0.0.0.0/0"] #Your public IPv4 address
    
+   #Both certificate ARN should create and get through Makefile
+   serverCertificateArn = "arn:aws:acm:us-east-1:YOUR_AWS_ACCOUNT_ID:certificate/xxxxxxxxxxxxxxxxxxxxxxxx"
+   clientCertificateArn = "arn:aws:acm:us-east-1:YOUR_AWS_ACCOUNT_ID:certificate/yyyyyyyyyyyyyyyyyyyyyyyy"
+   
    [database]
    username = "wordpress" #Database username
    defaultDatabaseName = "wordpress" #Default database name
