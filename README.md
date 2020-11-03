@@ -1,17 +1,23 @@
 # AWS Serverless WordPress
 
+`[2020/11/03] Still working on the documentation`
+
 ## Introduction
-This CDK project attempt to use serverless services on AWS to deploy a high ava
+Please read the blog post for introduction and explanation.
+[Dev.to: Best Practices for Running WordPress on AWS using CDK](https://dev.to/mikletng/best-practices-for-running-wordpress-on-aws-using-cdk-aj9)
+
 ### WordPress Plugin Used
 - W3 Total Cache
 - WP Offload SES Lite
 - WP Offload Media Lite
 - ElasticPress
+- Multiple Domain
 - HumanMade - AWS-XRay (Working on making it work...)
-## Architecture Diagram
-![Architecture Diagram](doc/architecture-diagram.png)
 
-## Deployment
+## Architecture Diagram
+![Architecture Diagram](doc/architecture-diagram-v2.png)
+
+## Deployment - (To be update)
 ### Before getting started
 Please make sure you have/are
 - Using bash
@@ -22,6 +28,7 @@ Please make sure you have/are
 - Installed the latest version of AWS CDK CLI
 
 *Please be notice, this stack only can deploy into us-east-1*
+0. You should have a public hosted zone in Route 53
 1. Initialize the CDK project, run `make init`
 2. Deploy the CDK Toolkit stack on to the target region, run `npx bootstrap aws://AWS_ACCOUNT_ID/AWS_REGION --profile AWS_PROFILE_NAME`
 3. Copy the `config.sample.toml` and rename to `config.toml`
@@ -58,6 +65,7 @@ Please make sure you have/are
     curl -O https://downloads.wordpress.org/plugin/wp-ses.1.4.3.zip &&\
     curl -O https://downloads.wordpress.org/plugin/amazon-s3-and-cloudfront.2.4.4.zip &&\
     curl -O https://downloads.wordpress.org/plugin/elasticpress.zip &&\
+    curl -O https://downloads.wordpress.org/plugin/multiple-domain.zip &&\
     curl https://codeload.github.com/humanmade/aws-xray/zip/1.2.12 -o humanmade-aws-xray-1.2.12.zip &&\
     unzip '*.zip' &&\
     rm -rf *.zip
