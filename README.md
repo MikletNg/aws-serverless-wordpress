@@ -1,14 +1,11 @@
 # AWS Serverless WordPress
 
-`[2020/11/03] Still working on the documentation`
-
 ## Introduction
 Please read the blog post for introduction and explanation.
-[Dev.to: Best Practices for Running WordPress on AWS using CDK](https://dev.to/mikletng/best-practices-for-running-wordpress-on-aws-using-cdk-aj9)
+[Dev.to: Best Practices for Running WordPress on AWS using CDK](https://dev.to/aws-builders/best-practices-for-running-wordpress-on-aws-using-cdk-aj9)
 
 ### WordPress Plugin Used
 - W3 Total Cache
-- WP Offload SES Lite
 - WP Offload Media Lite
 - ElasticPress
 - Multiple Domain
@@ -32,15 +29,16 @@ Please make sure you have/are
 1. Initialize the CDK project, run `make init`
 2. Deploy the CDK Toolkit stack on to the target region, run `npx bootstrap aws://AWS_ACCOUNT_ID/AWS_REGION --profile AWS_PROFILE_NAME`
 3. Copy the `config.sample.toml` and rename to `config.toml`
-4. Modify the configuration in `config.toml`
+4. Run `make easy-rsa-init gen-cert import-cert` to generate the certificate for the Client VPN
+5. Modify the configuration in `config.toml`
     ```toml
    [environment]
    account = "YOUR_AWS_ACCOUNT_ID" # Your AWS account ID
    
    [admin]
-   allowIpAddresses = ["0.0.0.0/0"] #Your public IPv4 address
+   allowIpAddresses = ["0.0.0.0/0"] #Your home/office public IPv4 address
    
-   #Both certificate ARN should create and get through Makefile
+   #Both certificate ARN should create and get from the previous steps
    serverCertificateArn = "arn:aws:acm:us-east-1:YOUR_AWS_ACCOUNT_ID:certificate/xxxxxxxxxxxxxxxxxxxxxxxx"
    clientCertificateArn = "arn:aws:acm:us-east-1:YOUR_AWS_ACCOUNT_ID:certificate/yyyyyyyyyyyyyyyyyyyyyyyy"
    
@@ -56,13 +54,12 @@ Please make sure you have/are
    [contact]
    email = ["hello@blog.example.com"] #Email address for notify any in-compliance event in AWS Config
     ```
-7. Run `make deploy profile=YOUR_AWS_PROFILE_NAME`
-8. After the CloudFormation stack deployed, open the Session Manager in System Manager, and open a session to the created bastion host. Then run the following command. (The version of WordPress plugin may NOT be latest)
+6. Run `make deploy profile=YOUR_AWS_PROFILE_NAME`
+7. After the CloudFormation stack deployed, open the Session Manager in System Manager, and open a session to the created bastion host. Then run the following command. (The version of WordPress plugin may NOT be latest)
     ```shell script
     sudo su -
     cd /mnt/efs/wp-content/plugins &&\
     curl -O https://downloads.wordpress.org/plugin/w3-total-cache.0.15.1.zip &&\
-    curl -O https://downloads.wordpress.org/plugin/wp-ses.1.4.3.zip &&\
     curl -O https://downloads.wordpress.org/plugin/amazon-s3-and-cloudfront.2.4.4.zip &&\
     curl -O https://downloads.wordpress.org/plugin/elasticpress.zip &&\
     curl -O https://downloads.wordpress.org/plugin/multiple-domain.zip &&\
@@ -70,7 +67,8 @@ Please make sure you have/are
     unzip '*.zip' &&\
     rm -rf *.zip
     ```
-9. After the installation, go to the webpage and setup the database connection and plugin configuration. For the hostname of Memcached or MySQL, please check the output in CloudFormation stack.
+8. After the installation, go to the webpage and setup the database connection and plugin configuration. For the hostname of Memcached or MySQL, please check the output in CloudFormation stack.
+9. For `Mutiple Domain` plugin, please enter `blog.example.com` and `admin.blog.example.com` these 2 hostname.
 
 ## References
 https://aws.amazon.com/tw/blogs/devops/build-a-continuous-delivery-pipeline-for-your-container-images-with-amazon-ecr-as-source/

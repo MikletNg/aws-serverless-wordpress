@@ -898,7 +898,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                                     byteMatchStatement: {
                                         fieldToMatch: {
                                             singleHeader: {
-                                                Name: 'X-Request-From-CloudFront'
+                                                Name: 'X_Request_From_CloudFront'
                                             }
                                         },
                                         positionalConstraint: 'EXACTLY',
@@ -926,7 +926,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                                     byteMatchStatement: {
                                         fieldToMatch: {
                                             singleHeader: {
-                                                Name: 'X-Request-From-CloudFront'
+                                                Name: 'X_Request_From_CloudFront'
                                             }
                                         },
                                         positionalConstraint: 'EXACTLY',
@@ -972,7 +972,7 @@ export class AwsServerlessWordpressStack extends cdk.Stack {
                         originProtocolPolicy: OriginProtocolPolicy.HTTPS_ONLY,
                         originReadTimeout: Duration.minutes(1),
                         originHeaders: {
-                            'X-Request-From-CloudFront': props.cloudFrontHashHeader
+                            'X_Request_From_CloudFront': props.cloudFrontHashHeader
                         }
                     },
                     behaviors: [
