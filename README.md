@@ -36,7 +36,7 @@ Please make sure you have/are
    account = "YOUR_AWS_ACCOUNT_ID" # Your AWS account ID
    
    [admin]
-   allowIpAddresses = ["0.0.0.0/0"] #Your home/office public IPv4 address
+   allowIpAddresses = ["0.0.0.0/0"] #Your home/office public IPv4 address, if using a specific IP add /32 like 24.222.174.192/32
    
    #Both certificate ARN should create and get from the previous steps
    serverCertificateArn = "arn:aws:acm:us-east-1:YOUR_AWS_ACCOUNT_ID:certificate/xxxxxxxxxxxxxxxxxxxxxxxx"
