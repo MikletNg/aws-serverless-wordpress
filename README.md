@@ -27,7 +27,7 @@ Please make sure you have/are
 *Please be notice, this stack only can deploy into us-east-1*
 0. You should have a public hosted zone in Route 53
 1. Initialize the CDK project, run `make init`
-2. Deploy the CDK Toolkit stack on to the target region, run `npx bootstrap aws://AWS_ACCOUNT_ID/AWS_REGION --profile AWS_PROFILE_NAME`
+2. Deploy the CDK Toolkit stack on to the target region, run `cdk bootstrap aws://AWS_ACCOUNT_ID/AWS_REGION --profile AWS_PROFILE_NAME`
 3. Copy the `config.sample.toml` and rename to `config.toml`
 4. Run `make easy-rsa-init gen-cert import-cert` to generate the certificate for the Client VPN
 5. Modify the configuration in `config.toml`
