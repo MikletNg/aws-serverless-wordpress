@@ -11,7 +11,7 @@ username = "wordpress" #Database username
 defaultDatabaseName = "wordpress" #Default database name
 
 [domain]
-domainName = "example.com" #Your root domain name, useually is the domain name of the created public hosted zone in Route 53
+domainName = "example.com" #Your root domain name, usually is the domain name of the created public hosted zone in Route 53
 hostname = "blog.example.com" #Your desire hostname for the WordPress
 alternativeHostname = ["*.blog.example.com"]
 
